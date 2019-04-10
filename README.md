@@ -8,42 +8,77 @@ This is a protocol between peers. Each side may act in both a client and a serve
 This protocol functions as a low level multiplexing, asynchronous, interruptible message chunking layer. It is expected that a messaging protocol will be layered on top of it. Even something primitive like using JSON objects as messages would work fine.
 
 
-## Operation
+
+General Operation
+-----------------
+
+Upon establishing a connection, peers send initiator messages, and then begin normal communications. A typical session would look like this:
 
 * Open connection
-* Peers each send an initiator message
+* Each peer sends an initiator message
 * Peers send and receive messages and replies
 * Close connection
 
 
-## Initiator message
 
-Before sending any other messages, a peer must send an initiator message:
+Initiator message
+-----------------
 
-| Octet 1 | Octet 2          | Octet 3      | Octet 4                    |
-| ------- | ---------------- | ------------ | -------------------------- |
-| Version | Length Bit Count | ID Bit Count | Timeout (10ths of seconds) |
+Before sending any other messages, a peer must send an initiator message. The initiator message is not acknowledged by the other peer. Each peer sends its own initiator message.
 
-The initiator message is not acknowledged by the other peer. Each peer sends its own initiator message.
+### Message Layout
 
-Version is currently 1.
+| Octet 1 | Octet 2 |
+| ------- | ------- |
+| Version | Sizing  |
 
-The total number of bits must add up to either 14 or 30. Neither bit count may be 0. A low length field bit count increases the marginal costs of the header. A low ID bit count limits the maximum number of simultaneous outstanding operations. Which settings are optimal will depend on your use case.
+#### Version Field
 
-If total bits (length bits + ID bits) is 14, message headers will be 2 octets long. If total bits is 30, message headers will be 4 octets long.
+Currently 1
 
-Timeout specifies how long a peer intends wait for a reply in 10ths of seconds when acting as a client. If an operation takes longer than the timeout, the server peer may elect to preemptively cancel the operation. If timeout is 0, it means that the timeout is unspecified, and the server must not preemptively cancel any operations. Once the first chunk of a reply has been queued for sending, the operation is considered complete, and may no longer be preemptively canceled by the server.
+#### Sizing Field
 
-Note: The client is not required to adhere to the timeout it specifies; it may cancel any message at any time, for any reason.
+The `sizing` field determines how many bits will be used for the `length` and `id` message header fields. `sizing` is structured as follows:
 
-Each peer may specify its own bit counts and timeout. The other peer must adhere to these constraints when receiving and replying to messages, but may specify its own (possibly different) parameters for messages it sends.
+| Bits 7-6    | Bit 5                 | Bits 4-0               |
+| ----------- | --------------------- | ---------------------- |
+| Cleared (0) | 32-bit Message Header | Length Field Bit Count |
 
-If a peer detects an error in the initiator message, it must close the connection, or discard all future messages if the connection cannot be closed.
+The `32-bit message header` bit determines if message headers in this session will be 16 or 32 bits wide:
+
+| Value | Meaning               |
+| ----- | --------------------- |
+|   0   | 16 bit message header |
+|   1   | 32 bit message header |
+
+The `length field bit count` field determines how many bits of the message header will be used to denote the `length` field. The remaining bits will be used to denote the `id` field. Both the length and ID field must be at least 1 bit wide, which means that valid values are from 1 to (max-1). For 16 bit headers, there are 14 bits available for sizing, giving a valid range of 1-13. For 32-bit headers, there are 30 bits available for sizing, giving a valid range of 1-29.
+
+A low length field bit count increases the marginal costs of the header. A low ID bit count limits the maximum number of simultaneous outstanding operations. Optimal settings will depend on your use case.
+
+Each peer may specify its own sizing. The other peer must adhere to these constraints when receiving and replying to messages, but may specify its own (possibly different) parameters for messages it sends.
+
+If a peer plans to mirror the other peer's sizing, you must establish a convention that specifies unambiguously who must send the initiator message first. Otherwise you'll risk both peers waiting for the other to make the first move.
+
+If a peer detects an error or invalid data in the initiator message, it must close the connection. If the connection cannot be closed, the peer must discard all future messages until the session ends.
 
 
-## Regular Messages
+#### Example:
 
-### Layout
+    0x01 0x0a
+
+* Version: 1
+* Message header size: 16 bits
+* Length field bit count: 10
+* ID field bit count: 4
+
+
+
+Regular Messages
+----------------
+
+Regular messages consist of a standard 16 or 32 bit header, followed by a possible data payload. This protocol does not concern itself with the contents of the payload.
+
+### Message Layout
 
 | Section | Octets   |
 | ------- | -------- |
@@ -51,7 +86,9 @@ If a peer detects an error in the initiator message, it must close the connectio
 | Data    | variable |
 
 
-### Header
+### Header Fields
+
+The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator message](#initiator-message).
 
 | Field       | Bits      |
 | ----------- | --------- |
@@ -64,7 +101,7 @@ If a peer detects an error in the initiator message, it must close the connectio
 
 The header is sent over the wire as a little endian 16 or 32 bit unsigned integer.
 
-For example, a 17/13 header would be conceptually viewed as:
+For example, a 17/13 header (where [sizing-field](#sizing-field) was 17 in the [initiator message](#initiator-message)) would be conceptually viewed as:
 
     trllllllllllllllllliiiiiiiiiiiii
 
@@ -92,7 +129,9 @@ The length field refers to the number of octets in the data portion of this chun
 The ID field is a unique number that is generated by the sender to differentiate the current message from other messages the sender has sent in the past. The sender must not use IDs that are currently in-flight (IDs that have been sent to the peer but have not yet received a reply, or have been canceled but not yet acked).
 
 
-## Special Messages
+
+Special Messages
+----------------
 
 A length of 0 confers special meaning to the message, depending on the reply and termination fields:
 
@@ -100,7 +139,7 @@ A length of 0 confers special meaning to the message, depending on the reply and
 | ------ | ----- | ----------- | ----------- |
 |    0   |   0   |       0     | Cancel      |
 |    0   |   1   |       0     | Cancel Ack  |
-|    0   |   0   |       1     | Keep Alive  |
+|    0   |   0   |       1     | Ping        |
 |    0   |   1   |       1     | Empty Reply |
 
 ### Cancel
@@ -111,20 +150,22 @@ The cancel message cancels an operation in progress. The ID field specifies the 
 
 Sent in response to a cancel request. All queued replies to that ID are removed, and the operation is canceled. Once the cancel is completed, the server sends a Cancel Ack. If the operation doesn't exist (possibly because it had already completed), the server still sends a Cancel Ack.
 
-### Keep Alive
+### Ping
 
-Each side keeps track of how long it's been idle (no messages in the send queue). After a threshold idle time, the peer should send a keep alive message using the next free ID. Keep alive messages are not acknowledged (the server must not reply to it).
+A ping message requests an empty reply from the peer. Upon receiving a ping message, a peer must respond as quickly as possible, sending an empty reply with the same message ID as the very next message (regardless of any existing queued messages). This allows peers to gauge the latency between them, and also provides for a "keep-alive" mechanism.
 
 ### Empty Reply
 
-Can be sent in response to a message, indicating successful completion but no other data to report.
+Can be sent in response to a message, indicating successful completion, but no other data to report.
 
 
-## Sending Messages
 
-Messages are sent in chunks. A multi-chunk message has its termination bit cleared to 0 for all but the last chunk. Single chunk messages always have the termination bit set.
+Sending Messages
+----------------
 
-The message ID is scoped to the sender. If both sides of the channel send a message with the same ID, they are considered different messages, and don't interfere with each other. A peer replies to a message by using the same message ID as it received from the sender, and setting the reply bit.
+Messages are sent in chunks. A multi-chunk message has its `termination bit` cleared to 0 for all but the last chunk. Single chunk messages always have the `termination bit` set.
+
+The message ID is scoped to the sender. If both sides of the channel send a message with the same ID, they are considered different messages, and don't interfere with each other. The `reply bit` inverts the scope: A peer replies to a message by using the same message ID as it received from the sender, and setting the reply bit.
 
 ### Flow
 
@@ -136,14 +177,14 @@ The message send and receive flow is as follows:
 * Receiver creates response to message ID 5 (with the reply bit set).
 * Receiver sends response ID 5 to the sender.
 
-This works in both directions. Participants are peers, and can both initiate and respond to messages.
+This works in both directions. Participants are peers, and can both initiate and respond to messages (acting as client and server simultaneously).
 
 Responses may be sent in a different order than the requests were received.
 
 
 ### Multiplexing
 
-Message chunks with the same ID must be sent in-order. The message is considered complete once the termination bit is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. They can be interspersed, like so:
+Message chunks with the same ID must be sent in-order (chunk 5 must not be sent before chunk 4). The message is considered complete once the `termination bit` is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. They can be interspersed, like so:
 
 * Message 10, chunk 0
 * Message 11, chunk 0
@@ -157,20 +198,15 @@ Message chunks with the same ID must be sent in-order. The message is considered
 How message chunks are sized and scheduled depends on your use case.
 
 
-## Timing
 
-A message must receive a response within a reasonable time. Each peer can tell the other what their timeout expectations are in their initiator message.
+Message Cancellation
+--------------------
 
-If a sender has not received a response within a timeout period, it may send a cancel message to cancel the outstanding operation.
+There are times when a sender might want to cancel an operation-in-progress. Circumstances may change, or the operation may be taking too long. A peer may cancel an outstanding operation by sending a cancel message, citing the message ID of the operation to be canceled.
 
+Once a cancel order has been issued, the ID of the canceled message is locked. A locked message ID cannot be used, and all replies to that message ID are discarded. Once a Cancel Ack reply is received, the message ID is unlocked and may be used again.
 
-## Message Cancellation
-
-There are times when a sender might want to cancel an operation-in-progress. It may do so with a cancel message, citing the ID of the message to be canceled.
-
-Once a cancel has been issued, the ID of that message is locked. A locked message cannot be used as a message ID, and all replies to that message ID are discarded. Once a Cancel Ack reply is received, the message ID is unlocked and may be used again.
-
-Example:
+#### Example:
 
 * Sender sends message ID 19
 * Sender times out
@@ -178,54 +214,27 @@ Example:
 * Receiver sends reply ID 19, which is discarded by the sender
 * Receiver sends cancel ack ID 19
 
-If a Cancel Ack is not received, it means that either the server is lagged, or is operating incorrectly.
+If a Cancel Ack is not received, it means that the server is either lagged, or is operating incorrectly.
 
 
-## Keep Alive
 
-If the sending channel is idle for too long (no messages to send), a peer must send keep-alive messages from time to time.
-
-TODO: What is the optimal keepalive timeout? Smaller than the message timeout?
-
-TODO: Figure out how to more accurately distinguish lag from a stuck process.
-
-If a peer has not received any messages within the timeout period, it may assume that the sender is lagged. Timeouts should be chosen to compensate for the expected lag.
-
-
-## Complex or Long Operations
-
-This protocol expects replies to be received in a timely manner. Operations at this level are not expected to be very complex. If an operation will take a long time to complete or has other complications, it's advisable to implement a callback mechanism:
-
-| Side   | Role   | Operation                             |
-| ------ | ------ | ------------------------------------- |
-| Peer A | Client | Message: Request + callback token     |
-| Peer B | Server | Reply: Callback successfully queued   |
-
-Peer B takes time processing the request, then, acting in a "client" role:
-
-| Side   | Role   | Operation                             |
-| ------ | ------ | ------------------------------------- |
-| Peer B | Client | Message: Result data + callback token |
-| Peer A | Server | Reply: Callback acknowledged          |
-
-The actual implementation of such a callback mechanism would be at a higher level than this protocol, and is thus beyond the scope of this document.
-
-
-## Spurious Messages
+Spurious Messages
+-----------------
 
 If a spurious (unexpected) message or reply is received, the peer should discard the message and ignore it. Spurious messages include:
 
 * Reply to a canceled message.
 * Cancel message for an operation not in progress.
 
-These situations can arise when the transmission medium is lagged or interrupted. A reply to a message may have already been en-route at the time of cancellation, or the operation may have completed before the cancel message arrived.
+These situations can arise when the transmission medium is lagged, or as the result of a race condition. A reply to a message may have already been en-route at the time of cancellation, or the operation may have completed before the cancel message arrived.
 
-The following are likely error conditions:
+The following are most likely error conditions:
 
 * Reply to a nonexistent message.
 * Cancel Ack for a message that wasn't canceled.
 
 In the error case, the peer may elect to report an error (outside of the scope of this protocol) or end the connection, depending on your use case.
+
 
 
 Version History
