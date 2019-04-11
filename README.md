@@ -16,7 +16,7 @@ Upon establishing a connection, peers send initiator messages, and then begin no
 
 * Open connection
 * Each peer sends an initiator message
-* Peers send and receive messages and replies
+* Peers send initiator message replies, and begin normal messaging
 * Close connection
 
 
@@ -24,7 +24,8 @@ Upon establishing a connection, peers send initiator messages, and then begin no
 Initiator message
 -----------------
 
-Before sending any other messages, a peer must send an initiator message. The initiator message is not acknowledged by the other peer. Each peer sends its own initiator message.
+Before sending any other messages, each peer must send an initiator message. A peer may not send any more messages until it has responded to the *other* peer's initiator message.
+
 
 ### Message Layout
 
@@ -53,23 +54,67 @@ The `32-bit message header` bit determines if message headers in this session wi
 
 The `length field bit count` field determines how many bits of the message header will be used to denote the `length` field. The remaining bits will be used to denote the `id` field. Both the length and ID field must be at least 1 bit wide, which means that valid values are from 1 to (max-1). For 16 bit headers, there are 14 bits available for sizing, giving a valid range of 1-13. For 32-bit headers, there are 30 bits available for sizing, giving a valid range of 1-29.
 
-A low length field bit count increases the marginal costs of the header. A low ID bit count limits the maximum number of simultaneous outstanding operations. Optimal settings will depend on your use case.
-
-Each peer may specify its own sizing. The other peer must adhere to these constraints when receiving and replying to messages, but may specify its own (possibly different) parameters for messages it sends.
-
-If a peer plans to mirror the other peer's sizing, you must establish a convention that specifies unambiguously who must send the initiator message first. Otherwise you'll risk both peers waiting for the other to make the first move.
-
-If a peer detects an error or invalid data in the initiator message, it must close the connection. If the connection cannot be closed, the peer must discard all future messages until the session ends.
+Each peer may specify its own sizing. The other peer must adhere to these constraints when receiving and replying to messages, but may specify its own (likely different) parameters for messages it sends.
 
 
-#### Example:
+### Size Mirroring
+
+A peer may signal that it will mirror the other peer's sizing by specifying `0` for the `length field bit count`. When one peer mirrors, both will use the settings of the peer that didn't mirror.
+
+It is an error if both peers attempt to mirror. If a peer that has sent a sizing of 0 also receives a sizing of 0, it must [reject the message](#errors).
+
+Only use mirroring if you've established an unambiguous convention for which peer shall mirror. For example, the peer that mostly takes on a "server" role is usually best suited to be the one to mirror.
+
+
+### Sizing Considerations
+
+A smaller length field bit count increases the marginal costs of the header. A smaller ID bit count limits the maximum number of simultaneous outstanding operations. A larger length field bit count increases the maximum sized buffer, which will require larger memory allocations to support sending and receiving messages. A larger ID bit count may require more memory or complexity to keep track of outstanding messages, depending on the implementation. Optimal settings will depend on your use case.
+
+
+### Errors
+
+It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or may specify a sizing that the peer is unwilling or unable to accommodate (a length bits size allowing 500mb message chunks, for example).
+
+To reject the initiator message, a peer sends a [cancel](#cancel) message with ID `0`. When an initiator message is rejected, the session is considered "dead" with no chance of recovery, and the connection should be closed.
+
+
+### Example:
 
     0x01 0x0a
 
 * Version: 1
 * Message header size: 16 bits
+* Usable bits for sizing: 14 (16 - 2)
 * Length field bit count: 10
-* ID field bit count: 4
+* ID field bit count: 4 (14 - 10)
+
+
+### Flow
+
+The initiator message is implicitly assigned the message ID `0`. This message ID will be considered "in flight" until a response is received: either an [empty reply](#empty-reply) for success, or a [cancel message](#cancel) for failure.
+
+Once a peer has sent its own initiator message response, it may begin sending other messages without waiting for the other side to send an initiator message response. If there was an error, the session is dead anyway, as will be signified once the failure response is received.
+
+#### Successful Flow
+
+* Peer A: initiator message
+* Peer B: initiator message
+* Peer B: empty reply ID 0
+* Peer B: message ID 1
+* Peer A: empty reply ID 0
+* Peer A: reply ID 1
+
+In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after responding to Peer A's initiator message. Since Peer A was eventually happy with the initiator message, everything is OK, and message 1 gets processed.
+
+#### Failure Flow
+
+* Peer A: initiator message
+* Peer B: initiator message
+* Peer B: empty reply ID 0
+* Peer B: message ID 1
+* Peer A: cancel ID 0
+
+In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator message. Message 1 never gets processed or responded to by Peer A because the session is dead. The peers must now disconnect.
 
 
 
@@ -83,7 +128,7 @@ Regular messages consist of a standard 16 or 32 bit header, followed by a possib
 | Section | Octets   |
 | ------- | -------- |
 | Header  | 2 or 4   |
-| Data    | variable |
+| Payload | variable |
 
 
 ### Header Fields
