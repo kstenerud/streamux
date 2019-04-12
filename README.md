@@ -266,12 +266,12 @@ If a Cancel Ack is not received, it means that either there is a communication p
 Spurious Messages
 -----------------
 
-If a spurious (unexpected) message or reply is received, the peer should ignore and discard it. Spurious messages include:
+There are situations where a peer may receive spurious (unexpected) messages. Spurious messages include:
 
 * Reply to a canceled message.
 * Cancel message for an operation not in progress.
 
-These situations can arise when the transmission medium is lagged, or as the result of a race condition. A reply to a message may have already been en-route at the time of cancellation, or the operation may have completed before the cancel message arrived.
+These situations can arise when the transmission medium is lagged, or as the result of a race condition. A reply to a message may have already been en-route at the time of cancellation, or the operation may have completed before the cancel message arrived. A reply to a canceled message can be ignored and discarded. A cancel message must always be responded to with a cancel ack.
 
 The following are most likely error conditions:
 
