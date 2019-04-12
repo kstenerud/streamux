@@ -24,97 +24,111 @@ Upon establishing a connection, peers send initiator messages, and then begin no
 Initiator message
 -----------------
 
-Before sending any other messages, each peer must send an initiator message of its own, and reply to the other peer's initiator message. A peer may not send any more messages until it has replied to the *other* peer's initiator message.
+Before sending any other messages, each peer must send an initiator message of its own, and reply to the other peer's initiator message.
 
 
-### Message Layout
+### Initiator Request
 
-| Octet 1 | Octet 2          | Octet 3      |
+| Octet 0 | Octet 1          | Octet 2      |
 | ------- | ---------------- | ------------ |
 | Version | Length Bit Count | ID Bit Count |
 
 #### Version Field
 
-Currently 1
+Currently `1`
 
 #### Length and ID Bit Counts
 
-Message headers consist of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. The length and ID bit counts determine how many bits will be used to encode those fields over the current session.
+[The regular message header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message header can be either 16 or 32 bits wide. If the length and ID bit counts total 14 or less, message headers will be 16 bits wide. At most, 30 bits may be used for length and ID combined.
 
-A message header can be either 16 or 32 bits wide. The protocol must choose the smallest size that allows all bits to fit. So if the length and ID bit counts total 14 or less, message headers will be 16 bits wide. At most, 30 bits in total may be used for length and ID.
+The length and ID bit count fields of the initiator message allow the peers to recommend how many bits should be used to encode those fields over the current session. The resulting size for each field will be the minimum of the values provided by each peer.
 
-Note: A bit count value of 0 has [special meaning](#size-mirroring).
+#### Wildcard Values
 
-Each peer specifies its own sizing, and the other peer must adhere to these constraints when receiving and replying to messages.
+The value `0`, which would normally be invalid, has special meaning as the "wildcard" value. When a peer uses a wildcard value, it is stating that it doesn't care what the end value will be. If one peer uses the wildcard value and the other does not, the non-wildcard value is chosen. If both peers use the wildcard value for a field, (30 - the other field result) is chosen. If both fields (length bit count and ID bit count) are set to the wildcard value by both peers, the result is 15 / 15.
 
-##### Sizing Considerations:
+#### Examples:
+
+| Peer    | Length Bits | ID Bits |
+| ------- | ----------- | ------- |
+| Peer A  |      20     |    10   |
+| Peer B  |      10     |    12   |
+| Result  |      10     |    10   |
+
+
+| Peer    | Length Bits | ID Bits |
+| ------- | ----------- | ------- |
+| Peer A  |       8     |     0   |
+| Peer B  |       9     |     5   |
+| Result  |       8     |     5   |
+
+
+| Peer    | Length Bits | ID Bits |
+| ------- | ----------- | ------- |
+| Peer A  |       0     |    10   |
+| Peer B  |       0     |     7   |
+| Result  |      23     |     7   |
+
+
+| Peer    | Length Bits | ID Bits |
+| ------- | ----------- | ------- |
+| Peer A  |       0     |     0   |
+| Peer B  |       0     |     0   |
+| Result  |      15     |    15   |
+
+
+#### Sizing Considerations
 
 * Small length bit count: Increases the marginal costs of the header, causing data wastage.
 * Large length bit count: Increases the buffer size required to support the maximum message length.
 * Small ID bit count: Limits the maximum number of simultaneous outstanding operations.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding messages.
 
-
-### Size Mirroring
-
-A peer may signal that it will mirror the other peer's sizing by specifying `0` for both bit counts. Having only one of the bit count fields equal to 0 is invalid. When one peer mirrors, both will use the sizing of the peer that didn't mirror.
-
-It is an error if both peers attempt to mirror. If a peer that has sent a sizing of 0 also receives a sizing of 0, it must [reject the message](#errors).
-
-Only use mirroring when you've established an unambiguous convention for which peer shall mirror. For example, the peer that mostly takes on a "server" role is usually best suited to be the one that mirrors the other, because a "client" is likely to be in a more varied network environment.
+It is recommended for peers that serve primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
 
 
-### Errors
+### Initiator Response
 
-It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or may specify a sizing that the peer is unwilling or unable to accommodate (a length bit count allowing 500mb message chunks, for example).
+| Octet 0                      |
+| ---------------------------- |
+| `0` (reject) or `1` (accept) |
 
-To reject the initiator message, a peer sends a [cancel](#cancel) message with ID `0`. When an initiator message is rejected, the session is considered "dead" with no chance of recovery.
+If a peer is happy with the resultant sizing, it responds with an "accept" (`1`).
 
-
-### Example:
-
-    0x01 0x0a
-
-* Version: 1
-* Message header size: 16 bits
-* Usable bits for sizing: 14 (16 - 2)
-* Length field bit count: 10
-* ID field bit count: 4 (14 - 10)
+It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it responds with a "reject" (`0`), which destroys the session.
 
 
-### Flow
+### Initiator Message Flow
 
-The initiator message is implicitly assigned the message ID `0`. This message ID will be considered "in flight" until a response is received: either an [empty reply](#empty-reply) for success, or a [cancel message](#cancel) for failure.
-
-Once a peer has replied to an initiator message, it may begin sending other messages without waiting for the other side to send an initiator message response. If there was an error, the session is dead anyway, and none of the sent messages will be processed before the failure response is received.
+The initiator flow is gated on each side only to the request message, because it is needed in order to formulate a response. Once a peer has sent an initiator response, it is free to begin sending normal messages, even if it hasn't yet received the other peer's response. If it turns out that the other peer has rejected the initiator message, the session is dead anyway, and none of the sent messages will have been processed.
 
 #### Successful Flow
 
-* Peer A: initiator message
-* Peer B: initiator message
-* Peer B: empty reply ID 0
-* Peer B: message ID 1
-* Peer A: empty reply ID 0
-* Peer A: reply ID 1
+* Peer A: initiator request
+* Peer B: initiator request
+* Peer B: initiator accept
+* Peer B: message ID 0
+* Peer A: initiator accept
+* Peer A: reply ID 0
 
-In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after responding to Peer A's initiator message. Since Peer A was eventually happy with the initiator message, everything is OK, and message 1 gets processed.
+In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after responding to Peer A's initiator message. Since Peer A eventually accepted the initiator message, everything is OK, and message 1 gets processed.
 
 #### Failure Flow
 
 * Peer A: initiator message
 * Peer B: initiator message
-* Peer B: empty reply ID 0
-* Peer B: message ID 1
-* Peer A: cancel ID 0
+* Peer B: initiator accept
+* Peer B: message ID 0
+* Peer A: initiator reject
 
-In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator message. Message 1 never gets processed or responded to by Peer A because the session is dead. The peers must now disconnect.
+In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator message. Message 0 never gets processed or responded to by Peer A because the session is dead. The peers must now disconnect.
 
 
 
 Regular Messages
 ----------------
 
-Regular messages consist of a standard 16 or 32 bit header, followed by a possible data payload. This protocol does not concern itself with the contents of the payload.
+Regular messages consist of a 16 or 32 bit header, followed by a possible data payload. This protocol does not concern itself with the contents of the payload.
 
 ### Message Layout
 
@@ -126,34 +140,26 @@ Regular messages consist of a standard 16 or 32 bit header, followed by a possib
 
 ### Header Fields
 
-The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator message](#initiator-message). The length and ID fields are placed adjacent to each other, shifted towards the lower bits, with the unused bits in the middle of the header set to `0`.
+The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator message](#initiator-message). The length and ID fields are placed adjacent to each other, next to the reply and termination bits. The unused upper bits must be cleared to `0`.
 
 | Field       | Bits      |
 | ----------- | --------- |
-| Termination |         1 |
-| Reply       |         1 |
 | Unused      |  variable |
 | Length      |  variable |
 | ID          |  variable |
+| Reply       |         1 |
+| Termination |         1 |
 
 For example, a 14/10 (length 14 bits, ID 10 bits) header would be conceptually viewed as:
 
-    tr000000lllllllllllllliiiiiiiiii
+    000000lllllllllllllliiiiiiiiiirt
 
-The header would actually be transmitted in little endian format:
+The header is transmitted in little endian format:
 
-    iiiiiiii llllllii llllllll tr000000
+    iiiiiirt lllliiii llllllll 000000ll
 
 
 ### Fields
-
-#### Termination
-
-The termination bit indicates that this is the final chunk for this message ID. For a large message that spans multiple chunks, you would set this to 0 for all but the last chunk.
-
-#### Reply
-
-The reply bit is used to reply to a message sent by a peer. When set, the ID field refers to the ID of the original message sent by the peer, and the reply must use the same bit layout for length and ID as the other peer specified in its initiator message.
 
 #### Length
 
@@ -162,6 +168,14 @@ The length field refers to the number of octets in the payload portion of this c
 #### ID
 
 The ID field is a unique number that is generated by the sender to differentiate the current message from other messages the sender has sent in the past. The sender must not use IDs that are currently in-flight (IDs that have been sent to the peer but have not yet received a reply, or have been canceled but not yet acked).
+
+#### Reply
+
+The reply bit is used to reply to a message sent by a peer. When set, the ID field refers to the ID of the original message sent by the peer, and the reply must use the same bit layout for length and ID as the other peer specified in its initiator message.
+
+#### Termination
+
+The termination bit indicates that this is the final chunk for this message ID. For a large message that spans multiple chunks, you would set this to 0 for all but the last chunk.
 
 
 
@@ -223,10 +237,10 @@ Message chunks with the same ID must be sent in-order (chunk 5 must not be sent 
 * Message 11, chunk 0
 * Message 12, chunk 0
 * Message 11, chunk 1
-* Message 10, chunk 1 (termination)
+* Message 10, chunk 1 (termination = 1)
 * Message 11, chunk 2
-* Message 12, chunk 1 (termination)
-* Message 11, chunk 3 (termination)
+* Message 12, chunk 1 (termination = 1)
+* Message 11, chunk 3 (termination = 1)
 
 Your choice of message chunk sizing and scheduling will depend on your use case.
 
@@ -248,7 +262,7 @@ Once a cancel order has been issued, the ID of the canceled message is locked. A
 * Receiver sends cancel ack ID 19
 * Sender receives cancel ack and unlocks ID 19
 
-If a Cancel Ack is not received, it means that either there is a communication problem (for example: lag), or the server is operating incorrectly.
+If a Cancel Ack is not received, it means that either there is a communication problem (such as lag), or the server is operating incorrectly.
 
 
 
