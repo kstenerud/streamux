@@ -128,7 +128,7 @@ In this example, Peer A is once again slow to respond, and Peer B once again goe
 Regular Messages
 ----------------
 
-Regular messages consist of a 16 or 32 bit header, followed by a possible data payload. This protocol does not concern itself with the contents of the payload.
+Regular messages consist of a 16 or 32 bit header, followed by a possible data payload. The header is transmitted as an unsigned integer in little endian format. The payload contents are beyond the scope of this document.
 
 ### Message Layout
 
@@ -153,8 +153,6 @@ The header fields contain information about what kind of message this is. Some f
 For example, a 14/10 (length 14 bits, ID 10 bits) header would be conceptually viewed as:
 
     000000lllllllllllllliiiiiiiiiirt
-
-The header is transmitted in little endian format.
 
 
 ### Fields
