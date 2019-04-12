@@ -40,7 +40,7 @@ Currently `1`
 
 These values determine how many bits will be used for the length and ID fields in regular message headers.
 
-[The regular message header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message header can be either 16 or 32 bits wide. If the length and ID bit counts total 14 or less, message headers will be 16 bits wide. At most, 30 bits may be used for length and ID combined.
+[The regular message header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message header can be either 16 or 32 bits wide, which leaves 14 or 30 bits for the length and ID fields. If the combined length and ID bit counts of the initiator request total 14 or less, message headers will be 16 bits wide. It is an error to specify a total bit count greater than 30.
 
 The length and ID bit count fields of the initiator request allow the peers to negotiate how many bits will be used to encode those fields over the current session. The resulting size for each field will be the minimum of the values provided by each peer.
 
