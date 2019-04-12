@@ -172,7 +172,7 @@ The reply bit is used to reply to a message sent by a peer. When set, the ID fie
 
 #### Termination
 
-The termination bit indicates that this is the final chunk for this message ID. For a large message that spans multiple chunks, you would set this to 0 for all but the last chunk.
+The termination bit indicates that this is the final chunk for this message ID. For a large message that spans multiple chunks, you would clear this to 0 for all but the last chunk.
 
 
 
