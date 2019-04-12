@@ -154,9 +154,7 @@ For example, a 14/10 (length 14 bits, ID 10 bits) header would be conceptually v
 
     000000lllllllllllllliiiiiiiiiirt
 
-The header is transmitted in little endian format:
-
-    iiiiiirt lllliiii llllllll 000000ll
+The header is transmitted in little endian format.
 
 
 ### Fields
