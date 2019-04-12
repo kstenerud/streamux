@@ -128,7 +128,7 @@ In this example, Peer A is once again slow to respond, and Peer B once again goe
 Regular Messages
 ----------------
 
-Regular messages consist of a 16 or 32 bit header, followed by a possible data payload. The header is transmitted as an unsigned integer in little endian format. The payload contents are beyond the scope of this document.
+Regular messages consist of a 16 or 32 bit header (determined by the [initiator message](#initiator-message)), followed by a possible data payload. The header is transmitted as a 16 or 32 bit unsigned integer in little endian format. The payload contents are beyond the scope of this document.
 
 ### Message Layout
 
