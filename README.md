@@ -16,7 +16,7 @@ Upon establishing a connection, peers send initiator messages, and then begin no
 
 * Open connection
 * Each peer sends an initiator message
-* Each peer sends an initiator message reply and begins normal messaging
+* Each peer sends an initiator reply and begins normal messaging
 * Close connection
 
 
@@ -89,20 +89,20 @@ The value `0`, which would normally be invalid, has special meaning as the "wild
 It is recommended for peers that serve primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
 
 
-### Initiator Response
+### Initiator Reply
 
 | Octet 0                           |
 | --------------------------------- |
 | `0` (accept), or nonzero (reject) |
 
-If a peer is happy with the resultant sizing, it responds with an `accept`.
+If a peer is happy with the resultant sizing, it replies with an `accept`.
 
-It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it responds with a `reject`, which destroys the session.
+It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it replies with a `reject`, which destroys the session.
 
 
 ### Initiator Message Flow
 
-The initiator flow is gated on each side only to the request message, because it is needed in order to formulate a response. Once a peer has sent an initiator response, it is free to begin sending normal messages, even if it hasn't yet received the other peer's response. If it turns out that the other peer has rejected the initiator message, the session is dead anyway, and none of the sent messages will have been processed.
+The initiator flow is gated on each side only to the request message, because it is needed in order to formulate a reply. Once a peer has sent an initiator reply, it is free to begin sending normal messages, even if it hasn't yet received the other peer's reply. If it turns out that the other peer has rejected the initiator message, the session is dead anyway, and none of the sent messages will have been processed.
 
 #### Successful Flow
 
@@ -113,7 +113,7 @@ The initiator flow is gated on each side only to the request message, because it
 * Peer A: initiator accept
 * Peer A: reply ID 0
 
-In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after responding to Peer A's initiator message. Since Peer A eventually accepted the initiator message, everything is OK, and message 1 gets processed.
+In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after replying to Peer A's initiator message. Since Peer A eventually accepted the initiator message, everything is OK, and message 1 gets processed.
 
 #### Failure Flow
 
@@ -123,7 +123,7 @@ In this example, Peer A was a little slow to respond, and Peer B went ahead with
 * Peer B: message ID 0
 * Peer A: initiator reject
 
-In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator message. Message 0 never gets processed or responded to by Peer A because the session is dead. The peers must now disconnect.
+In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator message. Message 0 never gets processed or replied to by Peer A because the session is dead. The peers must now disconnect.
 
 
 
@@ -195,15 +195,15 @@ The cancel message cancels an operation in progress. The ID field specifies the 
 
 ### Cancel Ack
 
-Sent in response to a cancel request. The operation is canceled, and all queued replies to that ID are removed. Once this is done, the server sends a Cancel Ack. If the operation doesn't exist (possibly because it had already completed), the server must still send a Cancel Ack.
+Sent in reply to a cancel request. The operation is canceled, and all queued replies to that ID are removed. Once this is done, the server sends a Cancel Ack. If the operation doesn't exist (possibly because it had already completed), the server must still send a Cancel Ack.
 
 ### Ping
 
-A ping message requests an empty reply from the peer. Upon receiving a ping message, a peer must respond with an empty response as quickly as possible (jumping ahead of any already queued messages). This allows peers to gauge the latency between them, and also provides for a "keep-alive" mechanism.
+A ping message requests an empty reply from the peer. Upon receiving a ping message, a peer must respond with an empty reply as quickly as possible (jumping ahead of any already queued messages). This allows peers to gauge the latency between them, and also provides for a "keep-alive" mechanism.
 
 ### Empty Reply
 
-Can be sent in response to any message, indicating successful completion but no other data to report.
+Can be sent in reply to any message, indicating successful completion but no other data to report.
 
 
 
@@ -220,11 +220,11 @@ The message send and receive flow is as follows (using an example message id of 
 
 * Sender sends message ID 5 (with the reply bit cleared) to the receiver.
 * Receiver processes message ID 5
-* Receiver sends response ID 5 (with the reply bit set) to the sender.
+* Receiver sends reply ID 5 (with the reply bit set) to the sender.
 
-This works in both directions. Participants are peers, and can both initiate and respond to messages (acting as client and server simultaneously).
+This works in both directions. Participants are peers, and can both initiate and reply to messages (acting as client and server simultaneously).
 
-Responses may be sent in a different order than the requests were received.
+Replies may be sent in a different order than the requests were received.
 
 
 ### Multiplexing
