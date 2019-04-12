@@ -91,13 +91,13 @@ It is recommended for peers that serve primarily "server" functionality to use w
 
 ### Initiator Response
 
-| Octet 0                      |
-| ---------------------------- |
-| `0` (reject) or `1` (accept) |
+| Octet 0                           |
+| --------------------------------- |
+| `0` (accept), or nonzero (reject) |
 
-If a peer is happy with the resultant sizing, it responds with an "accept" (`1`).
+If a peer is happy with the resultant sizing, it responds with an `accept`.
 
-It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it responds with a "reject" (`0`), which destroys the session.
+It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it responds with a `reject`, which destroys the session.
 
 
 ### Initiator Message Flow
