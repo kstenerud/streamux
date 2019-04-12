@@ -12,20 +12,19 @@ This protocol functions as a low level multiplexing, asynchronous, interruptible
 General Operation
 -----------------
 
-Upon establishing a connection, peers send initiator messages, and then begin normal communications. A typical session would look like this:
+Upon establishing a connection, peers send initiator requests and replies, and then begin normal communications. A typical session would look like this:
 
 * Open connection
-* Each peer sends an initiator message
+* Each peer sends an initiator request
 * Each peer sends an initiator reply and begins normal messaging
 * Close connection
 
 
 
-Initiator message
------------------
+Initiator Phase
+---------------
 
-Before sending any other messages, each peer must send an initiator message of its own, and reply to the other peer's initiator message.
-
+Before sending any other messages, each peer must send an initiator request, and reply to the other peer's initiator request.
 
 ### Initiator Request
 
@@ -43,7 +42,7 @@ These values determine how many bits will be used for the length and ID fields i
 
 [The regular message header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message header can be either 16 or 32 bits wide. If the length and ID bit counts total 14 or less, message headers will be 16 bits wide. At most, 30 bits may be used for length and ID combined.
 
-The length and ID bit count fields of the initiator message allow the peers to negotiate how many bits will be used to encode those fields over the current session. The resulting size for each field will be the minimum of the values provided by each peer.
+The length and ID bit count fields of the initiator request allow the peers to negotiate how many bits will be used to encode those fields over the current session. The resulting size for each field will be the minimum of the values provided by each peer.
 
 #### Wildcard Values
 
@@ -97,12 +96,12 @@ It is recommended for peers that serve primarily "server" functionality to use w
 
 If a peer is happy with the resultant sizing, it replies with an `accept`.
 
-It is possible that a peer may receive an initiator message that it cannot or will not accept. The message may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it replies with a `reject`, which destroys the session.
+It is possible that a peer may receive an initiator request that it cannot or will not accept. The request may contain invalid data, or the resultant sizing may be such that the peer is unwilling or unable to accommodate it. In such a case, it replies with a `reject`, which destroys the session.
 
 
 ### Initiator Message Flow
 
-The initiator flow is gated on each side only to the request message, because it is needed in order to formulate a reply. Once a peer has sent an initiator reply, it is free to begin sending normal messages, even if it hasn't yet received the other peer's reply. If it turns out that the other peer has rejected the initiator message, the session is dead anyway, and none of the sent messages will have been processed.
+The initiator flow is gated on each side only to the request, because it is needed in order to formulate a reply. Once a peer has sent an initiator reply, it is free to begin sending normal messages, even if it hasn't yet received the other peer's reply. If it turns out that the other peer has rejected the initiator request, the session is dead anyway, and none of the sent messages will have been processed.
 
 #### Successful Flow
 
@@ -113,24 +112,24 @@ The initiator flow is gated on each side only to the request message, because it
 * Peer A: initiator accept
 * Peer A: reply ID 0
 
-In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after replying to Peer A's initiator message. Since Peer A eventually accepted the initiator message, everything is OK, and message 1 gets processed.
+In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after replying to Peer A's initiator request. Since Peer A eventually accepted the initiator request, everything is OK, and message 1 gets processed.
 
 #### Failure Flow
 
-* Peer A: initiator message
-* Peer B: initiator message
+* Peer A: initiator request
+* Peer B: initiator request
 * Peer B: initiator accept
 * Peer B: message ID 0
 * Peer A: initiator reject
 
-In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator message. Message 0 never gets processed or replied to by Peer A because the session is dead. The peers must now disconnect.
+In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator request. Message 0 never gets processed or replied to by Peer A because the session is dead. The peers must now disconnect.
 
 
 
 Regular Messages
 ----------------
 
-Regular messages consist of a 16 or 32 bit header (determined by the [initiator message](#initiator-message)), followed by a possible data payload. The header is transmitted as a 16 or 32 bit unsigned integer in little endian format. The payload contents are beyond the scope of this document.
+Regular messages consist of a 16 or 32 bit header (determined by the [initiator request](#length-and-id-bit-counts)), followed by a possible data payload. The header is transmitted as a 16 or 32 bit unsigned integer in little endian format. The payload contents are beyond the scope of this document.
 
 ### Message Layout
 
@@ -142,7 +141,7 @@ Regular messages consist of a 16 or 32 bit header (determined by the [initiator 
 
 ### Header Fields
 
-The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator message](#initiator-message). The length and ID fields are placed adjacent to each other, next to the reply and termination bits. The unused upper bits must be cleared to `0`.
+The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator request](#initiator-request). The length and ID fields are placed adjacent to each other, next to the reply and termination bits. The unused upper bits must be cleared to `0`.
 
 | Field       | Bits      |
 | ----------- | --------- |
