@@ -29,49 +29,39 @@ Before sending any other messages, each peer must send an initiator message of i
 
 ### Message Layout
 
-| Octet 1 | Octet 2 |
-| ------- | ------- |
-| Version | Sizing  |
+| Octet 1 | Octet 2          | Octet 3      |
+| ------- | ---------------- | ------------ |
+| Version | Length Bit Count | ID Bit Count |
 
 #### Version Field
 
 Currently 1
 
-#### Sizing Field
+#### Length and ID Bit Counts
 
-The `sizing` field determines how many bits will be used for the `length` and `id` message header fields. `sizing` is structured as follows:
+Message headers consist of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. The length and ID bit counts determine how many bits will be used to encode those fields over the current session.
 
-| Bits 7-6    | Bit 5                 | Bits 4-0               |
-| ----------- | --------------------- | ---------------------- |
-| Cleared (0) | 32-bit Message Header | Length Field Bit Count |
+A message header can be either 16 or 32 bits wide. The protocol must choose the smallest size that allows all bits to fit. So if the length and ID bit counts total 14 or less, message headers will be 16 bits wide. At most, 30 bits in total may be used for length and ID.
 
-The `32-bit message header` bit determines if message headers in this session will be 16 or 32 bits wide:
-
-| Value | Meaning               |
-| ----- | --------------------- |
-|   0   | 16 bit message header |
-|   1   | 32 bit message header |
-
-The `length field bit count` field determines how many bits of the message header will be used for the `length` field. The remaining bits will be used for the `id` field. Both the length and ID fields must be at least 1 bit wide, which means that valid bit count values are from 1 to (max-1). For 16 bit headers, there are 14 bits available for sizing, giving a valid range of 1-13. For 32-bit headers, there are 30 bits available for sizing, giving a valid range of 1-29.
+Note: A bit count value of 0 has [special meaning](#size-mirroring).
 
 Each peer specifies its own sizing, and the other peer must adhere to these constraints when receiving and replying to messages.
 
-
-### Size Mirroring
-
-A peer may signal that it will mirror the other peer's sizing by specifying `0` for the `length field bit count`. When one peer mirrors, both will use the sizing of the peer that didn't mirror.
-
-It is an error if both peers attempt to mirror. If a peer that has sent a sizing of 0 also receives a sizing of 0, it must [reject the message](#errors).
-
-Only use mirroring when you've established an unambiguous convention for which peer shall mirror. For example, the peer that mostly takes on a "server" role is usually best suited to be the one that mirrors the other, because a "client" is likely to be in a more varied network environment.
-
-
-### Sizing Considerations
+##### Sizing Considerations:
 
 * Small length bit count: Increases the marginal costs of the header, causing data wastage.
 * Large length bit count: Increases the buffer size required to support the maximum message length.
 * Small ID bit count: Limits the maximum number of simultaneous outstanding operations.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding messages.
+
+
+### Size Mirroring
+
+A peer may signal that it will mirror the other peer's sizing by specifying `0` for both bit counts. Having only one of the bit count fields equal to 0 is invalid. When one peer mirrors, both will use the sizing of the peer that didn't mirror.
+
+It is an error if both peers attempt to mirror. If a peer that has sent a sizing of 0 also receives a sizing of 0, it must [reject the message](#errors).
+
+Only use mirroring when you've established an unambiguous convention for which peer shall mirror. For example, the peer that mostly takes on a "server" role is usually best suited to be the one that mirrors the other, because a "client" is likely to be in a more varied network environment.
 
 
 ### Errors
@@ -136,26 +126,23 @@ Regular messages consist of a standard 16 or 32 bit header, followed by a possib
 
 ### Header Fields
 
-The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator message](#initiator-message).
+The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator message](#initiator-message). The length and ID fields are placed adjacent to each other, shifted towards the lower bits, with the unused bits in the middle of the header set to `0`.
 
 | Field       | Bits      |
 | ----------- | --------- |
 | Termination |         1 |
 | Reply       |         1 |
+| Unused      |  variable |
 | Length      |  variable |
 | ID          |  variable |
 
-#### Bit Layout
+For example, a 14/10 (length 14 bits, ID 10 bits) header would be conceptually viewed as:
 
-The header is sent over the wire as a little endian 16 or 32 bit unsigned integer.
-
-For example, a 17/13 header (where [sizing-field](#sizing-field) was 17 in the [initiator message](#initiator-message)) would be conceptually viewed as:
-
-    trllllllllllllllllliiiiiiiiiiiii
+    tr000000lllllllllllllliiiiiiiiii
 
 The header would actually be transmitted in little endian format:
 
-    iiiiiiii llliiiii llllllll trllllll
+    iiiiiiii llllllii llllllll tr000000
 
 
 ### Fields
