@@ -5,7 +5,7 @@ A minimalist, multiplexing, asynchronous, bi-directional messaging and streaming
 
 This is a protocol between peers. Each side may act in both a client and a server role, sending messages and replying to messages.
 
-This protocol functions as a low level multiplexing, asynchronous, interruptible message chunking layer. It is expected that a messaging protocol will be layered on top of it. Even something primitive like using JSON objects as messages would work fine.
+This protocol functions as a low level multiplexing, asynchronous, interruptible message chunking layer. It is expected that a more application-specific messaging protocol will be layered on top of it. Even something simple like using JSON objects for message contents would work fine.
 
 
 
