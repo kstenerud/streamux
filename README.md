@@ -44,9 +44,13 @@ These values determine how many bits will be used for the length and ID fields i
 
 The length and ID bit count fields of the initiator request allow the peers to negotiate how many bits will be used to encode those fields over the current session. The resulting size for each field will be the minimum of the values provided by each peer.
 
+
 #### Wildcard Values
 
 The value `0`, which would normally be invalid, has special meaning as the "wildcard" value. When a peer uses a wildcard value, it is stating that it doesn't care what the end value will be. If one peer uses the wildcard value and the other does not, the non-wildcard value is chosen. If both peers use the wildcard value for a field, (30 - the other field result) is chosen. If both fields (length bit count and ID bit count) are set to the wildcard value by both peers, the result is 15 / 15.
+
+It is recommended for peers that serve primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
+
 
 #### Examples:
 
@@ -84,8 +88,6 @@ The value `0`, which would normally be invalid, has special meaning as the "wild
 * Large length bit count: Increases the buffer size required to support the maximum message length.
 * Small ID bit count: Limits the maximum number of simultaneous outstanding operations.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding messages.
-
-It is recommended for peers that serve primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
 
 
 ### Initiator Reply
