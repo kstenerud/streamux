@@ -3,16 +3,22 @@ Streamux
 
 A minimalist, asynchronous, multiplexing, request-response protocol.
 
-This is a protocol between peers. Each side may act in both a client and a server role, sending requests and responding to requests.
+### Features
 
-This protocol functions as a low level multiplexing, asynchronous, interruptible message chunking layer. It is expected that a more application-specific messaging protocol will be layered on top of it. Even something simple like using JSON objects for message contents would work fine.
+* Minimal Overhead (2 or 4 bytes per message, depending on configuration)
+* Multiplexing (multiple data streams can be sent across a single channel)
+* Asynchronous (client is informed asynchronously upon completion or error)
+* Interruptible (requests may be canceled)
+* Floating roles (both peers can operate as client and server at the same time)
+
+It is expected that a more application-specific messaging protocol will be layered on top of this protocol. Even something simple like using JSON objects for message contents would work.
 
 
 
 General Operation
 -----------------
 
-Upon establishing a connection, each peer sends an initiator request and response, and then begins normal communications. Communication is asynchronous after one peer has sent an initiator response. A typical session might look something like this:
+Upon establishing a connection, each peer sends an initiator request and response, and then begins normal communications. Communication is asynchronous after the peer has sent an initiator response. A typical session might look something like this:
 
 | Peer X             | Peer Y             |
 | ------------------ | ------------------ |
@@ -238,7 +244,7 @@ Sending Messages
 
 Messages are sent in chunks. A multi-chunk message has its `termination bit` cleared to 0 for all but the last chunk. Single chunk messages always have the `termination bit` set.
 
-The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be different, and don't conflict with each other. The `response bit` inverts the scope: A peer responds to a request by using the same request ID as it received from the sender, and setting the response bit.
+The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. The `response bit` inverts the scope: A peer responds to a request by using the same request ID as it received from the sender, and setting the response bit.
 
 ### Flow
 
