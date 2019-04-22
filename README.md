@@ -223,7 +223,7 @@ A length of 0 confers special meaning to the message, depending on the response 
 
 ### Cancel
 
-The cancel message cancels a request in progress. The ID field specifies the request to cancel. After sending a cancel message, the ID is locked (cannot be used, and all responses to that ID are discarded) until a Cancel Ack message for that ID is received.
+The cancel message cancels a request in progress. The ID field specifies the request to cancel. After sending a cancel message, the ID is locked (cannot be used, and all responses to that ID must be discarded) until a Cancel Ack message for that ID is received.
 
 ### Cancel Ack
 
@@ -261,7 +261,7 @@ Responses may be sent in a different order than the requests were received.
 
 ### Multiplexing
 
-Message chunks with the same ID must be sent in-order (chunk 5 of message 42 must not be sent before chunk 4 of message 42). The message is considered complete once the `termination bit` is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. They can be multiplexed, like so:
+Message chunks with the same ID must be sent in-order (chunk 5 of message 42 must not be sent before chunk 4 of message 42). The message is considered complete once the `termination bit` is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. Chunks from different messages can be sent interleaved, like so:
 
 * Message 10, chunk 0
 * Message 11, chunk 0
@@ -281,7 +281,7 @@ Request Cancellation
 
 There are times when a sender might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long. A peer may cancel an outstanding request by sending a cancel message, citing the request ID of the request to be canceled.
 
-Once a cancel order has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all responses to that request ID are discarded. Once a Cancel Ack is received, the request ID is unlocked and may be used again.
+Once a cancel order has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all responses to that request ID must be discarded. Once a Cancel Ack is received, the request ID is unlocked and may be used again.
 
 #### Example:
 
@@ -292,7 +292,7 @@ Once a cancel order has been issued, the ID of the canceled request is locked. A
 * Receiver sends cancel ack ID 19
 * Sender receives cancel ack and unlocks ID 19
 
-If a Cancel Ack is not received, it means that either there is a communication problem (such as lag), or the server is operating incorrectly.
+If a Cancel Ack is not received, it means that either there is a communication problem (such as lag or a broken connection), or the server is operating incorrectly.
 
 
 
@@ -304,7 +304,7 @@ There are situations where a peer may receive spurious (unexpected) messages. Sp
 * Response to a canceled request.
 * Cancel message for a request not in progress.
 
-These situations can arise when the transmission medium is lagged, or as the result of a race condition. A response to a request may have already been en-route at the time of cancellation, or the operation may have completed before the cancel message arrived. A response to a canceled request can be ignored and discarded. A cancel message must always be responded to with a cancel ack.
+These situations can arise when the transmission medium is lagged, or as the result of a race condition. A response to a request may have already been en-route at the time of cancellation, or the operation may have completed before the cancel message arrived. A response to a canceled request must be ignored and discarded. A cancel message must always be responded to with a cancel ack.
 
 The following are most likely error conditions:
 
