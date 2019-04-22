@@ -94,22 +94,22 @@ The choice of bit counts will affect the characteristics of the session. Dependi
 
 | Peer    | Length Bits | ID Bits |
 | ------- | ----------- | ------- |
-| Peer A  |       8     |     0   |
-| Peer B  |       9     |     5   |
-| Result  |       8     |     5   |
+| Peer A  |     255     |     5   |
+| Peer B  |       9     |     7   |
+| Result  |       9     |     5   |
 
 
 | Peer    | Length Bits | ID Bits |
 | ------- | ----------- | ------- |
-| Peer A  |       0     |    10   |
-| Peer B  |       0     |     7   |
-| Result  |      23     |     7   |
+| Peer A  |      18     |   255   |
+| Peer B  |      16     |   255   |
+| Result  |      16     |    14   |
 
 
 | Peer    | Length Bits | ID Bits |
 | ------- | ----------- | ------- |
-| Peer A  |       0     |     0   |
-| Peer B  |       0     |     0   |
+| Peer A  |     255     |   255   |
+| Peer B  |     255     |   255   |
 | Result  |      15     |    15   |
 
 
