@@ -76,7 +76,7 @@ It is recommended for peers that serve primarily "server" functionality to use w
 The choice of bit counts will affect the characteristics of the session. Depending on your use case and operating environment, certain aspects will be more important than others:
 
 * Small length bit count: Increases the marginal costs of the header, causing data wastage.
-* Large length bit count: Increases the buffer size required to support the maximum message length.
+* Large length bit count: Increases the buffer size required to support the maximum message chunk length.
 * Small ID bit count: Limits the maximum number of simultaneous outstanding requests.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding requests.
 
@@ -160,31 +160,38 @@ In this example, Peer A is once again slow to respond, and Peer B once again goe
 Regular Messages
 ----------------
 
-Regular messages consist of a 16 or 32 bit header (determined by the [initiator request](#length-and-id-bit-counts)), followed by a possible data payload. The header is transmitted as a 16 or 32 bit unsigned integer in little endian format. The payload contents are beyond the scope of this document.
+Regular messages are sent in chunks, consisting of a 16 or 32 bit header (determined by the [initiator request](#length-and-id-bit-counts)) followed by a possible data payload. The payload contents are beyond the scope of this document.
 
-### Message Layout
+
+### Message Chunk Layout
 
 | Section | Octets   |
 | ------- | -------- |
 | Header  | 2 or 4   |
 | Payload | variable |
 
+The header is treated as a single (16 or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format.
+
 
 ### Header Fields
 
 The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator request](#initiator-request). The length and request ID fields are placed adjacent to each other, next to the response and termination bits. The unused upper bits must be cleared to `0`.
 
-| Field       | Bits      |
-| ----------- | --------- |
-| Unused      |  variable |
-| Length      |  variable |
-| Request ID  |  variable |
-| Response    |         1 |
-| Termination |         1 |
+| Field       | Bits      | Order     |
+| ----------- | --------- | --------- |
+| Unused      |  variable | High Bit  |
+| Length      |  variable |           |
+| Request ID  |  variable |           |
+| Response    |         1 |           |
+| Termination |         1 | Low Bit   |
 
-For example, a 14/10 (length 14 bits, ID 10 bits) header would be conceptually viewed as:
+For example, a 14/10 header (14 bit length, 10 bit ID, 6 bits unused, which would result in a 32 bit header) would be conceptually viewed as:
 
     000000lllllllllllllliiiiiiiiiirt
+
+A 9/5 header (9 bit length, 5 bit ID, which would result in a 16 bit header) would be conceptually viewed as:
+
+    llllllllliiiiirt
 
 
 ### Fields
