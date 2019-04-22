@@ -70,7 +70,7 @@ Note: A length bit count of 0 is invalid. An ID bit count of 0 means that there 
 
 The value `255`, which would normally be invalid, has special meaning as the "wildcard" value when specifying a bit count. When a peer uses a wildcard value for a bit count, it is stating that it doesn't care what the end value will be. If one peer uses the wildcard value and the other does not, the non-wildcard value is chosen. If both peers use the wildcard value for a field, 30 minus the other bit count field result is chosen, to a maximum of 15 bits. If both fields (length bit count and ID bit count) are set to the wildcard value by both peers, the result is 15 length bits and 15 ID bits.
 
-It is recommended for peers that serve primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
+It is recommended for peers that provide primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
 
 
 #### Sizing Considerations
@@ -177,7 +177,7 @@ The header is treated as a single (8, 16, 24, or 32 bit) unsigned integer compos
 
 ### Header Fields
 
-The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator request](#initiator-request). The length and request ID fields are placed adjacent to each other, next to the response and termination bits. The unused upper bits must be cleared to `0`.
+The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator request](#initiator-request). The length and request ID fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
 
 | Field       | Bits      | Order     |
 | ----------- | --------- | --------- |
@@ -298,13 +298,13 @@ Once a cancel order has been issued, the ID of the canceled request is locked. A
 
 #### Example:
 
-* "Client" peer sends request ID 19
-* "Client" peer times out
-* "Client" peer sends cancel ID 19
-* "Server" peer sends response ID 19
-* "Client" peer discards response ID 19
-* "Server" peer sends cancel ack ID 19
-* "Client" peer receives cancel ack and unlocks ID 19
+* Peer A sends request ID 19
+* Peer A times out
+* Peer A sends cancel ID 19
+* Peer B sends response ID 19
+* Peer A discards response ID 19
+* Peer B sends cancel ack ID 19
+* Peer A receives cancel ack and unlocks ID 19
 
 If a Cancel Ack is not received, it means that either there is a communication problem (such as lag or a broken connection), or the serving peer is operating incorrectly.
 
