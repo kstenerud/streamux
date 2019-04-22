@@ -59,9 +59,9 @@ Currently, only version 1 exists.
 
 #### Length and ID Bit Counts
 
-Length and ID bit counts determine how many bits will be used for the length and ID fields in regular message headers. The decided size for each field will be the minimum of the values provided by each peer.
+Length and ID bit counts determine how many bits will be used for the length and ID fields in message chunk headers. The decided size for each field will be the minimum of the values provided by each peer.
 
-[The regular message header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message header can be 8, 16, 24, or 32 bits wide, which leaves 6, 14, 22, or 30 bits for the length and ID fields. If the combined length and ID bit counts of the initiator request total 6 or less, messages headers witll be 8 bits wide (14 or less: 16 bits wide, 22 bits or less: 24 bits wide). It is an error to specify a total bit count greater than 30.
+[The message chunk header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message chunk header can be 8, 16, 24, or 32 bits wide, which leaves 6, 14, 22, or 30 bits for the length and ID fields. If the combined length and ID bit counts of the initiator request total 6 or less, messages headers witll be 8 bits wide (14 or less: 16 bits wide, 22 bits or less: 24 bits wide). It is an error to specify a total bit count greater than 30.
 
 Note: A length bit count of 0 is invalid. An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are ID 0).
 
@@ -121,15 +121,15 @@ An initiator response must be sent only once, in response to an initiator reques
 | --------------------------------- |
 | `0` (accept), or nonzero (reject) |
 
-Only two responses (`accept` or `reject`) are possible. If a peer rejects the other's initiator request, the session is now considered "dead", and the connection should be closed. This can happen if the negotiated parameters are something that the peer cannot or does not want to accommodate, or if the initiator request was malformed.
+Only two responses (`accept` or `reject`) are possible. If a peer rejects the other's initiator request, the session is now considered "dead": All messages must be ignored, and the connection should be closed. This can happen if the negotiated parameters are something that the peer cannot or does not want to accommodate, or if the initiator request was malformed.
 
-If a peer accepts the other's initiator request, this side of the session is now established, and the peer may begin sending regular messages.
+If a peer accepts the other's initiator request, this side of the session is now established, and the peer may begin sending normal messages.
 
-| Peer A             | Peer B             | Notes                                |
-| ------------------ | ------------------ | ------------------------------------ |
-| Initiator Request  | Initiator Request  |                                      |
-|                    | Initiator Response | Peer B may now send regular messages |
-| Initiator Response |                    | Peer A may now send regular messages |
+| Peer A             | Peer B             | Notes                               |
+| ------------------ | ------------------ | ----------------------------------- |
+| Initiator Request  | Initiator Request  |                                     |
+|                    | Initiator Response | Peer B may now send normal messages |
+| Initiator Response |                    | Peer A may now send normal messages |
 
 
 ### Initiator Message Flow
@@ -195,7 +195,7 @@ A 9/5 header (9 bit length, 5 bit ID, which would result in a 16 bit header) wou
 
     llllllllliiiiirt
 
-A 6/0 header (6 bit length, 0 bit id, which would result in an 8 bit header) would be conceptually viewed as:
+A 6/0 header (6 bit length, 0 bit ID, which would result in an 8 bit header) would be conceptually viewed as:
 
     llllllrt
 
@@ -204,7 +204,7 @@ A 6/0 header (6 bit length, 0 bit id, which would result in an 8 bit header) wou
 
 #### Length
 
-The length field refers to the number of octets in the payload portion of this chunk (i.e. the message header does not count towards the length).
+The length field refers to the number of octets in the payload portion of this chunk (i.e. the message chunk header does not count towards the length).
 
 #### Request ID
 
