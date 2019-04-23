@@ -45,14 +45,19 @@ Before a peer can send any other messages, it must first send an initiator reque
 
 The initiator request negotiates various properties that will be used for the duration of the current session. It must be sent once and only once, as the first message to the other peer.
 
-| Octet 0 | Octet 1          | Octet 2      |
-| ------- | ---------------- | ------------ |
-| Version | Length Bit Count | ID Bit Count |
+| Octet 0         | Octet 1         | Octet 2          | Octet 3      |
+| --------------- | --------------- | ---------------- | ------------ |
+| Minimum Version | Maximum Version | Length Bit Count | ID Bit Count |
 
 
-#### Version
+#### Minimum and Maximum Version
 
-The version field determines the maximum protocol version that this peer can support. The decided protocol version will be the minumum of the values provided by each peer. `0` is an invalid value.
+These fields determine the minimum and maximum protocol versions that this peer can support. The decided protocol version will be lowest of the two peers' maximums, so long as the result is greater than or equal to the highest of the two peers' minimums.
+
+    version = min(PeerA.Maximum, PeerB.Maximum)
+    if version < max(PeerA.Minimum, PeerB.Minimum) then fail
+
+`0` is an invalid value.
 
 Currently, only version 1 exists.
 
