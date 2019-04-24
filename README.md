@@ -188,18 +188,18 @@ There may be times when the initiator flow is considered too chatty. In such a c
 
 #### Successful Flow
 
-* Peer A: initiator request with `quick init request` 1
+* Peer A: initiator request with `quick init request` = 1
 * Peer A: request ID 0
-* Peer B: initiator request with `quick init allowed` 1
+* Peer B: initiator request with `quick init allowed` = 1
 * Peer B: response ID 0
 
 Peer A doesn't wait for Peer B's initiator request before sending normal messages, simply assuming everything will be fine. Once Peer B's request arrives, both sides understand that they are in agreement, and message processing continues normally.
 
 #### Failure Flow
 
-* Peer A: initiator request with `quick init request` 1
+* Peer A: initiator request with `quick init request` = 1
 * Peer A: request ID 0
-* Peer B: initiator request with `quick init allowed` 0
+* Peer B: initiator request with `quick init allowed` = 0
 * Negotiation failed (no further messages sent)
 
 In this case, Peer B doesn't allow quick init, and so session establishment fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect, and the client may attempt to reconnect with `quick init request` 0.
