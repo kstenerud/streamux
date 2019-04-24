@@ -183,6 +183,15 @@ Normal messages are sent in chunks, consisting of an 8, 16, 24, or 32 bit header
 
 The header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format.
 
+As noted earlier, the header size depends on the combined length and ID bit sizes chosen in the [initiator request](#initiator-request):
+
+| Min Bit Size | Max Bit Size | Header Size |
+| ------------ | ------------ | ----------- |
+|       1      |       6      |      8      |
+|       7      |      14      |     16      |
+|      15      |      22      |     24      |
+|      23      |      30      |     32      |
+
 
 ### Header Fields
 
