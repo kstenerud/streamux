@@ -53,7 +53,7 @@ The initiator request negotiates various properties that will be used for the du
 
 #### Version
 
-Requests a particular protocol version. The decided protocol version will be the minimum of the two peers. `0` is an invalid value. A peer may not support versions that low, and would in such a case send a reject response.
+Requests a particular protocol version. The decided protocol version will be the minimum of the two peers. A peer may not support versions that low, and would in such a case send a reject response. `0` is an invalid value.
 
 Currently, only version 1 exists.
 
