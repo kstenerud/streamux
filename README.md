@@ -202,9 +202,9 @@ Peer A doesn't wait for Peer B's initiator request before sending normal message
 * Peer B: initiator request with `quick init allowed` = 0
 * Negotiation failed (no further messages sent)
 
-In this case, Peer B doesn't allow quick init, and so session establishment fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect, and the client may attempt to reconnect with `quick init request` 0.
+In this case, Peer B doesn't allow quick init, and so session initialization fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect. The client may of course choose to connect again with `quick init request` = 0.
 
-If neither side sets `quick init request` to 1, normal initiator flow is followed. If both sides set `quick init request` to 1, the negotiation fails, and the session is dead.
+If neither side sets `quick init request` to 1, normal initiator flow is followed. If both sides set `quick init request` to 1, the negotiation fails, and the session is dead. It is an error for a peer to set both `quick init request` and `quick init allowed` to 1.
 
 Note: Both sides must still reach an agremeent on the protocol version.
 
