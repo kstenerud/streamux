@@ -119,6 +119,8 @@ The choice of bit counts will affect the characteristics of the session. Dependi
 
 #### Flags
 
+The flags enable or request certain features.
+
 | Position | Meaning                |
 | -------- | ---------------------- |
 |     7    | Quick Init Request     |
