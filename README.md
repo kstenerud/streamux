@@ -45,9 +45,9 @@ Before a peer can send any other messages, it must first send an initiator reque
 
 The initiator request negotiates various properties that will be used for the duration of the current session. It must be sent once and only once, as the first message to the other peer.
 
-| Octet 0         | Octet 1         | Octet 2          | Octet 3      |
-| --------------- | --------------- | ---------------- | ------------ |
-| Minimum Version | Maximum Version | Length Bit Count | ID Bit Count |
+| Octet 0         | Octet 1         | Octet 2          | Octet 3      | Octet 4 |
+| --------------- | --------------- | ---------------- | ------------ | ------- |
+| Minimum Version | Maximum Version | Length Bit Count | ID Bit Count | Flags   |
 
 
 #### Minimum and Maximum Version
@@ -70,8 +70,7 @@ Length and ID bit counts determine how many bits will be used for the length and
 
 Note: A length bit count of 0 is invalid. An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0).
 
-
-#### Bit Count Wildcard Values
+##### Bit Count Wildcard Values
 
 The value `255`, which would normally be invalid, has special meaning as the "wildcard" value when specifying a bit count. When a peer uses a wildcard value for a bit count, it is stating that it doesn't care what the end value will be.
 
@@ -80,6 +79,22 @@ The value `255`, which would normally be invalid, has special meaning as the "wi
 * If both bit count fields are set to the wildcard value by both peers, the result is 15 length bits and 15 ID bits.
 
 It is recommended for peers that provide primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
+
+
+#### Flags
+
+| Position | Meaning                |
+| -------- | ---------------------- |
+|     7    | Quick Init Request     |
+|     6    | Quick Init Allowed     |
+|     5    | reserved, cleared to 0 |
+|     4    | reserved, cleared to 0 |
+|     3    | reserved, cleared to 0 |
+|     2    | reserved, cleared to 0 |
+|     1    | reserved, cleared to 0 |
+|     0    | reserved, cleared to 0 |
+
+Quick init flags will be discussed in section [Quick Init](#quick-init).
 
 
 #### Sizing Considerations
@@ -165,6 +180,33 @@ In this example, Peer A was a little slow to respond, and Peer B went ahead with
 * Peer A: initiator reject
 
 In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator request. Request 0 never gets processed or responded to by Peer A because the session is dead. The peers must now disconnect.
+
+
+### Quick Init
+
+There may be times when the initiator flow is considered too chatty. In such a case, peers may elect to quick init, which eliminates gating on the initial request-response by automatically choosing the init values from the "client-y" peer. A "server-y" peer may elect to allow quick init, meaning that it is willing to disregard its own initiator request and use the client's recommendations instead (as if the server had used wildcard values for length and ID). This shortens the initiator message flow:
+
+#### Successful Flow
+
+* Peer A: initiator request with `quick init request` 1
+* Peer A: request ID 0
+* Peer B: initiator request with `quick init allowed` 1
+* Peer B: response ID 0
+
+Peer A doesn't wait for Peer B's initiator request before sending normal messages, simply assuming everything will be fine. Once Peer B's request arrives, both sides understand that they are in agreement, and message processing continues normally.
+
+#### Failure Flow
+
+* Peer A: initiator request with `quick init request` 1
+* Peer A: request ID 0
+* Peer B: initiator request with `quick init allowed` 0
+* Negotiation failed (no further messages sent)
+
+In this case, Peer B doesn't allow quick init, and so session establishment fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect, and the client may attempt to reconnect with `quick init request` 0.
+
+If neither side sets `quick init request` to 1, normal initiator flow is followed. If both sides set `quick init request` to 1, the negotiation fails, and the session is dead.
+
+Note: Both sides must still reach an agremeent on the protocol version.
 
 
 
