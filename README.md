@@ -77,23 +77,7 @@ The value `255`, which would normally be invalid, has special meaning as the "wi
 It is recommended for peers that provide primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
 
 
-#### Flags
-
-| Position | Meaning                |
-| -------- | ---------------------- |
-|     7    | Quick Init Request     |
-|     6    | Quick Init Allowed     |
-|     5    | reserved, cleared to 0 |
-|     4    | reserved, cleared to 0 |
-|     3    | reserved, cleared to 0 |
-|     2    | reserved, cleared to 0 |
-|     1    | reserved, cleared to 0 |
-|     0    | reserved, cleared to 0 |
-
-Quick init flags will be discussed in section [Quick Init](#quick-init).
-
-
-#### Sizing Considerations
+##### Bit Count Considerations
 
 The choice of bit counts will affect the characteristics of the session. Depending on your use case and operating environment, certain aspects will be more important than others:
 
@@ -103,7 +87,7 @@ The choice of bit counts will affect the characteristics of the session. Dependi
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding requests.
 
 
-#### Examples:
+##### Bit Count Examples
 
 | Peer    | Length Bits | ID Bits |
 | ------- | ----------- | ------- |
@@ -131,6 +115,22 @@ The choice of bit counts will affect the characteristics of the session. Dependi
 | Peer A  |     255     |   255   |
 | Peer B  |     255     |   255   |
 | Result  |      15     |    15   |
+
+
+#### Flags
+
+| Position | Meaning                |
+| -------- | ---------------------- |
+|     7    | Quick Init Request     |
+|     6    | Quick Init Allowed     |
+|     5    | reserved, cleared to 0 |
+|     4    | reserved, cleared to 0 |
+|     3    | reserved, cleared to 0 |
+|     2    | reserved, cleared to 0 |
+|     1    | reserved, cleared to 0 |
+|     0    | reserved, cleared to 0 |
+
+Quick init flags will be discussed in section [Quick Init](#quick-init).
 
 
 ### Initiator Response
