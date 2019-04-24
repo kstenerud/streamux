@@ -10,6 +10,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 * Asynchronous (client is informed asynchronously upon completion or error)
 * Interruptible (requests may be canceled)
 * Floating roles (both peers can operate as client and server at the same time)
+* Quick init mode, requiring no round-trips
 
 It is expected that a more application-specific messaging protocol will be layered on top of this protocol. Even something simple like using JSON objects for message contents would work (albeit wastefully).
 
