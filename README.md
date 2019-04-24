@@ -184,16 +184,19 @@ In this example, Peer A is once again slow to respond, and Peer B once again goe
 
 ### Quick Init
 
-There may be times when the initiator flow is considered too chatty. In such a case, peers may elect to quick init, which eliminates gating on the initial request-response by automatically choosing the init values from the "client-y" peer. A "server-y" peer may elect to allow quick init, meaning that it is willing to disregard its own initiator request and use the client's recommendations instead (as if the server had used wildcard values for length and ID). This shortens the initiator message flow:
+There may be times when the normal initiator flow is considered too chatty. In such a case, peers may elect to quick init, which eliminates gating on the initial request-response by automatically choosing the init values from the "client-y" peer. A "server-y" peer may elect to allow quick init, meaning that it is willing to disregard its own initiator request and use the client's recommendations instead (as if the server had used wildcard values for length and ID). Only the "server-y" side (the side that sets `quick init allowed` = 1) sends an `initiator response` during a quick init.
+
+This shortens the initiator message flow:
 
 #### Successful Flow
 
 * Peer A: initiator request with `quick init request` = 1
 * Peer A: request ID 0
 * Peer B: initiator request with `quick init allowed` = 1
+* Peer B: initiator accept
 * Peer B: response ID 0
 
-Peer A doesn't wait for Peer B's initiator request before sending normal messages, simply assuming everything will be fine. Once Peer B's request arrives, both sides understand that they are in agreement, and message processing continues normally.
+Peer A doesn't wait for Peer B's `initiator request` before sending normal messages, simply assuming everything will be fine. Once Peer B's request arrives, both sides understand that they are in agreement, and message processing continues normally. Peer B must of course wait for Peer A's `initiator request` before it can send any messages. Peer B may still choose to reject Peer A's initiator request if it cannot or will not accommodate the parameters.
 
 #### Failure Flow
 
@@ -202,7 +205,7 @@ Peer A doesn't wait for Peer B's initiator request before sending normal message
 * Peer B: initiator request with `quick init allowed` = 0
 * Negotiation failed (no further messages sent)
 
-In this case, Peer B doesn't allow quick init, and so session initialization fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect. The client may of course choose to connect again with `quick init request` = 0.
+In this case, Peer B doesn't allow quick init, and so session initialization fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect. The client may of course elect to connect again with `quick init request` = 0, following the normal initiator flow instead.
 
 If neither side sets `quick init request` to 1, normal initiator flow is followed. If both sides set `quick init request` to 1, the negotiation fails, and the session is dead. It is an error for a peer to set both `quick init request` and `quick init allowed` to 1.
 
