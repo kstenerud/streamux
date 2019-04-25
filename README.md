@@ -282,47 +282,86 @@ The response bit is used to respond to a request sent by a peer. When set, the I
 The termination bit indicates that this is the final chunk for this request ID (either as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to 0 for all but the last chunk.
 
 
+### Special Cases
 
-Special Messages
-----------------
+#### Empty Termination
 
-Special messages have specific out-of-band meanings necessary for the efficient operation of the session. There are three kinds of special messages, and a fourth convenience message that is only sometimes considered out-of-band.
+A zero-length chunk with the termination bit set is an `empty termination` type, and is processed as if the last non-zero-length chunk of the same ID would have had its termination bit set. This is sometimes necessary in streaming situations, where the encoding process cannot reliably know where the end of the stream is. For example:
+
+    [ID 5, 3996 bytes] [ID 5, 4004 bytes] [ID 5, 0 bytes + termination]
+
+vs
+
+    [ID 5, 2844 bytes] [ID 5, 5000 bytes] [ID 5, 156 bytes + termination]
+
+Note that interleaved chunks for other IDs don't affect this behavior:
+
+    [ID 5, 4004 bytes] [ID x, y bytes] ... [ID 5, 0 bytes + termination]
+
+If an `empty termination` is the first chunk for its ID (not preceded by non-empty, non-terminated chunks for the same ID), it is either an `empty response` (response = 1) or an [out of band](#out-of-band-messages) `ping` (response = 0):
+
+    [ID 7, 0 bytes + termination]
+
+#### Empty Response
+
+An `empty response` is an `empty termination` response (length = 0, response = 1, termination = 1) with no preceding non-empty, non-terminated response chunks of the same ID.
+
+`empty response` signals successful completion of the request with no other data to report.
+
+
+
+Out of Band Messages
+--------------------
+
+This section lists out-of-band messages, which are necessary to the efficient operation of the session. Two of them overlap with normal messages (see [special cases](#special-cases)), and are considered out-of-band only in special circumstances.
 
 
 ### Encoding
 
-A length of 0 confers special meaning to the message, depending on the response and termination fields. The ID field functions as normal:
+OOB messages are signified by a message chunk length of 0, and also certain circumstances. The response and termination bits determine the message type:
 
-| ID  | Length | Response | Termination | Meaning        |
-| --- | ------ | -------- | ----------- | -------------- |
-| Any |    0   |     0    |       0     | Cancel         |
-| Any |    0   |     1    |       0     | Cancel Ack     |
-| Any |    0   |     0    |       1     | Ping           |
-| Any |    0   |     1    |       1     | Empty Response |
+| ID  | Length | Response | Termination | Normal Meaning    | OOB Circumstance | OOB Meaning |
+| --- | ------ | -------- | ----------- | ----------------- | ---------------- | ----------- |
+| Any |    0   |     0    |       0     |                   | Always           | Cancel      |
+| Any |    0   |     1    |       0     |                   | Always           | Cancel Ack  |
+| Any |    0   |     0    |       1     | Empty Termination | First Chunk      | Ping        |
+| Any |    0   |     1    |       1     | Empty Response    | Response to Ping | Ping Ack    |
+
+### Special Circumstances
+
+The OOB message types `ping` and `ping ack` share encodings with request `empty termination`, and with `empty response`. It is only in certain circumstances that they become OOB messages:
+
+#### Empty Termination vs Ping
+
+If an `empty termination` request is the first chunk (not preceded by non-empty, non-terminated request chunks of the same ID), it is considered a `ping` message.
+
+#### Empty Response vs Ping Ack
+
+If an `empty response` is responding to a `ping`, it is considered a `ping ack`.
 
 
-### Special Message Priority
+### OOB Message Priority
 
-Although message send queue priority is an implementation detail outside of the scope of this document, special messages - being out-of-band - must be sent at a higher priority than all others in order to ensure efficient operation.
+Implementations of this protocol must include message queue priority functionality. OOB messages must be sent at a higher priority than all normal messages.
 
 
-### Special Message Types
+### OOB Message Types
 
 #### Cancel
 
-The `cancel` message cancels a request in progress. The ID field specifies the request to cancel. Upon sending a `cancel` message, the ID is locked (cannot be used, and all responses to that ID must be discarded) until a `cancel ack` message for that ID is received. `cancel` messages must be given high priority in the send queue in order to facilitate unlocking the request ID as soon as possible.
+The `cancel` message cancels a request in progress. The ID field specifies the request to cancel. Upon sending a `cancel` message, the ID is locked (cannot be used, and all responses to that ID must be discarded) until a `cancel ack` message for that ID is received.
 
 #### Cancel Ack
 
-Sent to acknowledge a `cancel` request. The operation is canceled, and all queued responses to that request ID are removed. Once this is done, the serving peer sends a `cancel ack`. If the request doesn't exist (possibly because it had already completed), the serving peer must still send a `cancel ack`. Since a `cancel` message is causing the requesting peer to lock an ID, `cancel ack` must be given high priority in the send queue in order to facilitate unlocking the ID as soon as possible.
+Sent to acknowledge a `cancel` request. The operation is canceled, and all queued responses to that request ID are removed. Once this is done, the serving peer sends a `cancel ack`. If the request doesn't exist (possibly because it had already completed), the serving peer must still send a `cancel ack`, because the other peer's ID will remain locked until an ack is received.
 
 #### Ping
 
-A `ping` requests an empty response from the peer. Upon receiving a `ping`, a peer must send an `empty response` as quickly as possible. Pings and their responses must receive high priority in the send queue in order to allow peers to gauge the latency between them with any accuracy. `ping` is also useful as a "keep-alive" mechanism over mediums that close idle sessions.
+A `ping` requests a `ping ack` from the peer. Upon receiving a `ping`, a peer must send `ping ack` as quickly as possible. `ping` is useful for gauging latency, and as a "keep-alive" mechanism over mediums that close idle sessions.
 
-#### Empty Response
+#### Ping Ack
 
-A convenience message that can be sent in response to any request except `cancel`, indicating successful completion with no other data to report. This message only requires high priority when used in response to a `ping` (the only situation where this message type is considered out-of-band).
+A `ping ack` acknowledges a `ping` request.
 
 
 
@@ -366,23 +405,23 @@ Your choice of message chunk sizing and scheduling will depend on your use case.
 Request Cancellation
 --------------------
 
-There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long. A requesting peer may cancel an outstanding request by sending a cancel message, citing the request ID of the request to be canceled.
+There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long. A requesting peer may cancel an outstanding request by sending a `cancel` message, citing the request ID of the request to be canceled.
 
-Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all responses to that request ID must be discarded. Once a Cancel Ack is received, the request ID is unlocked and may be used again.
+Once a `cancel` request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all responses to that request ID must be discarded. Once a `cancel ack` is received, the request ID is unlocked and may be used again.
 
 #### Example:
 
 * Peer A sends request ID 19
 * Peer B receives request ID 19 and begins servicing it
 * Peer A times out
-* Peer A locks ID 19 and sends cancel ID 19
+* Peer A locks ID 19 and sends `cancel` ID 19
 * Peer B sends response ID 19
 * Peer A discards response ID 19 (because Peer A's ID 19 is still locked)
-* Peer B receives cancel ID 19
-* Peer B sends cancel ack ID 19
-* Peer A receives cancel ack ID 19 and unlocks ID 19
+* Peer B receives `cancel` ID 19
+* Peer B sends `cancel ack` ID 19
+* Peer A receives `cancel ack` ID 19 and unlocks ID 19
 
-If a Cancel Ack is not received, it means that either there is a communication problem (such as lag or a broken connection), or the serving peer is operating incorrectly.
+If a `cancel ack` is not received, it means that either there is a communication problem (such as lag or a broken connection), or the serving peer is operating incorrectly.
 
 
 
@@ -392,14 +431,14 @@ Spurious Messages
 There are situations where a peer may receive spurious (unexpected) messages. Spurious messages include:
 
 * Response to a canceled request.
-* Cancel message for a request not in progress.
+* `cancel` message for a request not in progress.
 
-These situations can arise when the transmission medium is lagged, or as the result of a race condition. A response to a request may have already been en-route at the time of cancellation, or the operation may have already completed before the cancel message arrived. A response to a canceled request must be ignored and discarded. A peer must always respond to a cancel request with a cancel ack, even if there is no operation to cancel.
+These situations can arise when the transmission medium is lagged, or as the result of a race condition. A response to a request may have already been en-route at the time of cancellation, or the operation may have already completed before the `cancel` message arrived. A response to a canceled request must be ignored and discarded. A peer must always respond to a `cancel` request with a `cancel ack`, even if there is no operation to cancel.
 
 The following are error conditions:
 
 * Response to a nonexistent request.
-* Cancel Ack for a request that wasn't canceled.
+* `cancel ack` for a request that wasn't canceled.
 
 In the error case, the peer may elect to report an error (outside of the scope of this protocol) or end the connection, depending on your use case.
 
