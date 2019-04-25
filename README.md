@@ -184,7 +184,7 @@ In this example, Peer A is once again slow to respond, and Peer B once again goe
 
 There may be times when the normal initiator flow is considered too chatty. In such a case, peers may elect to quick init, which eliminates gating on the initial request-response by automatically choosing the init values from the "client-y" peer. A "server-y" peer may elect to allow quick init, meaning that it is willing to disregard its own initiator request and use the client's recommendations instead (as if the server had used wildcard values for length and ID). Only the "server-y" side (the side that sets `quick init allowed` = 1) sends an `initiator response` during a quick init.
 
-This shortens the initiator message flow:
+Note: Protocol version negotiation occurs the same as in the normal initiator flow (the lowest of the two versions is chosen).
 
 #### Successful Flow
 
@@ -222,9 +222,7 @@ In this case, Peer B doesn't allow quick init, and so session initialization fai
 * QA = `quick init allowed`
 * - = don't care
 
-Note: Both peers must also reach an agremeent on the protocol version, regardless of initialization method.
-
-It is strongly enncouraged that parties agree outside of the protocol which peers shall be "client-y" and which shall be "server-y" when using quick connect, because if they do not agree about their roles, they cannot negotiate a session.
+There must be agreement outside of the protocol about which peer shall be "client-y" and which shall be "server-y" before using quick connect. If the peers do not have a-priori agreement about their respective roles, they won't successfully negotiate a quick init session.
 
 
 
