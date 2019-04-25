@@ -224,7 +224,7 @@ In this case, Peer B doesn't allow quick init, and so session initialization fai
 
 Note: Both peers must also reach an agremeent on the protocol version, regardless of initialization method.
 
-It is strongly enncouraged that parties agree outside of the protocol which peers shall be "client-y" and which shall be "server-y" when using quick connect, because if both set `quick init request` to 1, it becomes impossible for them to negotiate a session.
+It is strongly enncouraged that parties agree outside of the protocol which peers shall be "client-y" and which shall be "server-y" when using quick connect, because if both set `quick init request` to 1, they cannot negotiate a session.
 
 
 
