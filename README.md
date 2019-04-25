@@ -198,16 +198,34 @@ Peer A doesn't wait for Peer B's `initiator request` before sending normal messa
 
 #### Failure Flow
 
-* Peer A: initiator request with `quick init request` = 1
+* Peer A: initiator request with `quick init request` = 1, `quick init allowed` = 0
 * Peer A: request ID 0
 * Peer B: initiator request with `quick init allowed` = 0
 * Negotiation failed (no further messages sent)
 
 In this case, Peer B doesn't allow quick init, and so session initialization fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect. The client may of course elect to connect again with `quick init request` = 0, following the normal initiator flow instead.
 
-If neither side sets `quick init request` to 1, normal initiator flow is followed. If both sides set `quick init request` to 1, the negotiation fails, and the session is dead. It is an error for a peer to set both `quick init request` and `quick init allowed` to 1.
+#### Quick Init Rules
 
-Note: Both sides must still reach an agremeent on the protocol version.
+| Peer A QR | Peer B QR | Peer A QA | Peer B QA | Result                         |
+| --------- | --------- | --------- | --------- | ------------------------------ |
+|     0     |     0     |     -     |     -     | Normal initiator flow          |
+|     1     |     0     |     -     |     1     | Quick init using Peer A values |
+|     1     |     1     |     0     |     1     | Quick init using Peer A values |
+|     0     |     1     |     1     |     -     | Quick init using Peer B values |
+|     1     |     1     |     1     |     0     | Quick init using Peer B values |
+|     0     |     1     |     0     |     -     | Negotiation Failure            |
+|     1     |     0     |     -     |     0     | Negotiation Failure            |
+|     1     |     1     |     0     |     0     | Negotiation Failure            |
+|     1     |     1     |     1     |     1     | Negotiation Failure            |
+
+* QR = quick init requested
+* QA = quick init allowed
+* - = don't care
+
+Note: Both peers must still reach an agremeent on the protocol version.
+
+If quick negotiation fails, the "calling" peer could try a new connection with `quick init request` = 0 and `quick init allowed` = 1. However, it is better to have a general rule that only "server-y" peers set `quick init allowed`, and only "client-y" peers set `quick init request`.
 
 
 
