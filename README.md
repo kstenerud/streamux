@@ -123,14 +123,14 @@ The flags enable or request certain features.
 
 | Position | Meaning                |
 | -------- | ---------------------- |
-|     7    | Quick Init Request     |
-|     6    | Quick Init Allowed     |
-|     5    | reserved, cleared to 0 |
-|     4    | reserved, cleared to 0 |
-|     3    | reserved, cleared to 0 |
-|     2    | reserved, cleared to 0 |
-|     1    | reserved, cleared to 0 |
-|     0    | reserved, cleared to 0 |
+| 7 (0x80) | Quick Init Request     |
+| 6 (0x40) | Quick Init Allowed     |
+| 5 (0x20) | reserved, cleared to 0 |
+| 4 (0x10) | reserved, cleared to 0 |
+| 3 (0x08) | reserved, cleared to 0 |
+| 2 (0x04) | reserved, cleared to 0 |
+| 1 (0x02) | reserved, cleared to 0 |
+| 0 (0x01) | reserved, cleared to 0 |
 
 Quick init flags will be discussed in section [Quick Init](#quick-init).
 
