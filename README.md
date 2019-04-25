@@ -236,7 +236,7 @@ As noted earlier, the header size depends on the combined length and ID bit size
 |      23      |      30      |     32      |
 
 
-### Header Fields
+### Message Header Encoding
 
 The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator request](#initiator-request). The length and request ID fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
 
@@ -261,7 +261,7 @@ A 6/0 header (6-bit length, 0-bit ID, which would result in an 8-bit header) wou
     llllllrt
 
 
-### Fields
+### Message Fields
 
 #### Length
 
@@ -316,35 +316,6 @@ Out of Band Messages
 This section lists out-of-band messages, which are necessary to the efficient operation of the session. Two of them overlap with normal messages (see [special cases](#special-cases)), and are considered out-of-band only in special circumstances.
 
 
-### Encoding
-
-OOB messages are signified by a message chunk length of 0, and also certain circumstances. The response and termination bits determine the message type:
-
-| ID  | Length | Response | Termination | Normal Meaning    | OOB Circumstance | OOB Meaning |
-| --- | ------ | -------- | ----------- | ----------------- | ---------------- | ----------- |
-| Any |    0   |     0    |       0     |                   | Always           | Cancel      |
-| Any |    0   |     1    |       0     |                   | Always           | Cancel Ack  |
-| Any |    0   |     0    |       1     | Empty Termination | First Chunk      | Ping        |
-| Any |    0   |     1    |       1     | Empty Response    | Response to Ping | Ping Ack    |
-
-### Special Circumstances
-
-The OOB message types `ping` and `ping ack` share encodings with request `empty termination`, and with `empty response`. It is only in certain circumstances that they become OOB messages:
-
-#### Empty Termination vs Ping
-
-If an `empty termination` request is the first chunk (not preceded by non-empty, non-terminated request chunks of the same ID), it is considered a `ping` message.
-
-#### Empty Response vs Ping Ack
-
-If an `empty response` is responding to a `ping`, it is considered a `ping ack`.
-
-
-### OOB Message Priority
-
-Implementations of this protocol must include message queue priority functionality. OOB messages must be sent at a higher priority than all normal messages.
-
-
 ### OOB Message Types
 
 #### Cancel
@@ -362,6 +333,35 @@ A `ping` requests a `ping ack` from the peer. Upon receiving a `ping`, a peer mu
 #### Ping Ack
 
 A `ping ack` acknowledges a `ping` request.
+
+
+### OOB Message Encoding
+
+OOB messages are signified by a message chunk length of 0, and also certain circumstances. The response and termination bits determine the message type:
+
+| ID  | Length | Response | Termination | Normal Meaning    | OOB Circumstance | OOB Meaning |
+| --- | ------ | -------- | ----------- | ----------------- | ---------------- | ----------- |
+| Any |    0   |     0    |       0     |                   | Always           | Cancel      |
+| Any |    0   |     1    |       0     |                   | Always           | Cancel Ack  |
+| Any |    0   |     0    |       1     | Empty Termination | First Chunk      | Ping        |
+| Any |    0   |     1    |       1     | Empty Response    | Response to Ping | Ping Ack    |
+
+### OOB Special Circumstances
+
+The OOB message types `ping` and `ping ack` share encodings with request `empty termination`, and with `empty response`. It is only in certain circumstances that they become OOB messages:
+
+#### Empty Termination vs Ping
+
+If an `empty termination` request is the first chunk (not preceded by non-empty, non-terminated request chunks of the same ID), it is considered a `ping` message.
+
+#### Empty Response vs Ping Ack
+
+If an `empty response` is responding to a `ping`, it is considered a `ping ack`.
+
+
+### OOB Message Priority
+
+Implementations of this protocol must include message queue priority functionality. OOB messages must be sent at a higher priority than all normal messages.
 
 
 
