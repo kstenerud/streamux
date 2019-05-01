@@ -12,7 +12,7 @@ internal encode_request(context, id, data length, is terminator)
 {
 
 }
-
+ 
 internal encode_init_request(context, min version, max version, length bits, id bits)
 {
     build message
@@ -81,10 +81,8 @@ public streamux_ping(callback?)
     call on_message_data_encoded(max priority, header, null)
 }
 
-public streamux_decode_feed(context, data)
+internal decode_init_phase_feed(context, data)
 {
-    result_code = ok
-
     while data available:
 
         if [decoding init request]:
@@ -107,6 +105,19 @@ public streamux_decode_feed(context, data)
                 else:
                     state [decoding header]
                     loop
+
+    return status
+}
+
+public streamux_decode_feed(context, data)
+{
+    result_code = ok
+
+    if in init phase:
+        decode_init_phase(context, data)
+        loop
+
+    while data available:
 
         if [decoding header]:
             decode header, then:
