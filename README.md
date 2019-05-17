@@ -62,7 +62,7 @@ Currently, only version 1 exists.
 
 Length and ID bit counts determine how many bits will be used for the length and ID fields in message chunk headers. The decided size for each field will be the minimum of the values provided by each peer.
 
-[The message chunk header](#header-fields) has up to 30 bits that may be used to encode the `length` and `id` fields. The more bits selected for use, the wider the message header will be:
+The message chunk header has up to 30 bits that may be used to encode the `length` and `id` fields. The more bits selected for use, the wider the message header will be:
 
 | Total Bits Used | Message Header Size |
 | --------------- | ------------------- |
