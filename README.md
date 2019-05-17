@@ -62,20 +62,18 @@ Currently, only version 1 exists.
 
 Length and ID bit counts determine how many bits will be used for the length and ID fields in message chunk headers. The decided size for each field will be the minimum of the values provided by each peer.
 
-[The message chunk header](#header-fields) consists of 2 flag bits, with the rest of the bits free for use as `length` and `id` fields. A message chunk header can be 8, 16, 24, or 32 bits wide, which leaves 6, 14, 22, or 30 bits for the length and ID fields. If the combined length and ID bit counts of the initiator request total 6 or less, messages headers will be 8 bits wide (14 or less: 16 bits wide, 22 bits or less: 24 bits wide). It is an error to specify a total bit count greater than 30.
+[The message chunk header](#header-fields) has up to 30 bits that may be used to encode the `length` and `id` fields. The more bits selected for use, the wider the message header will be:
+
+| Total Bits Used | Message Header Size |
+| --------------- | ------------------- |
+| 1-6             | 1 octet             |
+| 7-14            | 2 octets            |
+| 15-22           | 3 octets            |
+| 23-30           | 4 octets            |
+
+It is an error to specify a total bit count greater than 30.
 
 Note: A length bit count of 0 is invalid. An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0).
-
-##### Bit Count Wildcard Values
-
-The value `255`, which would normally be invalid, has special meaning as the "wildcard" value when specifying a bit count. When a peer uses a wildcard value for a bit count, it is stating that it doesn't care what the end value will be.
-
-* If one peer uses the wildcard value and the other does not, the non-wildcard value is chosen.
-* If one bit count field is set to the wildcard value by both peers, the result is 30 minus the other bit count field result, to a maximum of 15 bits.
-* If both bit count fields are set to the wildcard value by both peers, the result is 15 length bits and 15 ID bits.
-
-It is recommended for peers that provide primarily "server" functionality to use wildcard values, which allows client peers - who are likely to have more varying network conditions - to control these values.
-
 
 ##### Bit Count Considerations
 
@@ -86,6 +84,15 @@ The choice of bit counts will affect the characteristics of the session. Dependi
 * Small ID bit count: Limits the maximum number of simultaneous outstanding requests.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding requests.
 
+##### Bit Count Wildcard Values
+
+The value `255`, which would normally be invalid, has special meaning as the "wildcard" value when specifying a bit count. When a peer uses a wildcard value for a bit count, it is stating that it doesn't care what the end value will be.
+
+* If one peer uses the wildcard value and the other does not, the non-wildcard value is chosen.
+* If one bit count field is set to the wildcard value by both peers, the result is 30 minus the other bit count field result, to a maximum of 15 bits.
+* If both bit count fields are set to the wildcard value by both peers, the result is 15 length bits and 15 ID bits.
+
+It is recommended for peers that provide primarily "server" functionality to use wildcard values, which allows client peers (who are likely to have more network condition variance) to control these values.
 
 ##### Bit Count Examples
 
@@ -156,7 +163,7 @@ If a peer accepts the other's initiator request, this side of the session is now
 
 ### Initiator Message Flow
 
-The initiator flow is gated on each side to the other's initiator request, because it is needed in order to formulate an initiator response. Once a peer has sent an initiator response `accept`, it is free to begin sending normal messages, even if it hasn't yet received the other peer's response. If it turns out that the other peer has rejected the initiator request, the session is dead anyway, and none of the sent requests will have been processed.
+The initiator flow is gated on each side to the other's initiator request, because it is needed in order to formulate an initiator response. Once a peer has sent an initiator response of `accept`, it is free to begin sending normal messages, even if it hasn't yet received the other peer's response. If it turns out that the other peer has rejected the initiator request, the session is dead anyway, and none of the sent requests will have been processed.
 
 #### Successful Flow
 
@@ -210,11 +217,11 @@ In this case, Peer B doesn't allow quick init, and so session initialization fai
 | Peer A QR | Peer B QR | Peer A QA | Peer B QA | Result                         |
 | --------- | --------- | --------- | --------- | ------------------------------ |
 |     0     |     0     |     -     |     -     | Normal initiator flow          |
-|     1     |     1     |     -     |     -     | Negotiation Failure            |
+|     1     |     0     |     0     |     1     | Quick init using Peer A values |
+|     0     |     1     |     1     |     0     | Quick init using Peer B values |
 |     1     |     -     |     -     |     0     | Negotiation Failure            |
 |     -     |     1     |     0     |     -     | Negotiation Failure            |
-|     1     |     0     |     -     |     1     | Quick init using Peer A values |
-|     0     |     1     |     1     |     -     | Quick init using Peer B values |
+|     1     |     1     |     -     |     -     | Negotiation Failure            |
 |     1     |     -     |     1     |     -     | Invalid                        |
 |     -     |     1     |     -     |     1     | Invalid                        |
 
@@ -222,26 +229,24 @@ In this case, Peer B doesn't allow quick init, and so session initialization fai
 * QA = `quick init allowed`
 * - = don't care
 
-There must be agreement outside of the protocol about which peer shall be "client-y" and which shall be "server-y" before using quick connect. If the peers do not have a-priori agreement about their respective roles, they won't successfully negotiate a quick init session.
+There must be agreement outside of the protocol about which peer shall be "client-y" and which shall be "server-y" before using quick connect. If the peers do not have a-priori agreement about their respective roles, they are likely to both set `quick init request` and then fail negotiation.
 
 
 
 Normal Messages
 ---------------
 
-Normal messages are sent in chunks, consisting of an 8, 16, 24, or 32 bit header (determined by the [initiator request](#length-and-id-bit-counts)) followed by a possible data payload. The payload contents are beyond the scope of this document.
-
-
-### Message Chunk Layout
+Normal messages are sent in chunks, consisting of a message chunk header, followed by a possible data payload (whose contents are application-specific).
 
 | Section | Octets   |
 | ------- | -------- |
 | Header  | 1 to 4   |
 | Payload | variable |
 
-The header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format.
 
-As noted earlier, the header size depends on the combined length and ID bit sizes chosen in the [initiator request](#initiator-request):
+### Message Header Encoding
+
+The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format. The header size is determined by the field length choices in the [initiator request](#initiator-request):
 
 | Min Bit Size | Max Bit Size | Header Size |
 | ------------ | ------------ | ----------- |
@@ -250,10 +255,7 @@ As noted earlier, the header size depends on the combined length and ID bit size
 |      15      |      22      |     24      |
 |      23      |      30      |     32      |
 
-
-### Message Header Encoding
-
-The header fields contain information about what kind of message this is. Some fields have variable widths, which are determined for the entirety of the session by the [initiator request](#initiator-request). The length and request ID fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
+The header fields contain information about what kind of message this is. The length and request ID fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
 
 | Field       | Bits      | Order     |
 | ----------- | --------- | --------- |
@@ -280,7 +282,7 @@ A 6/0 header (6-bit length, 0-bit ID, which would result in an 8-bit header) wou
 
 #### Length
 
-The length field refers to the number of octets in the payload portion of this chunk (i.e. the message chunk header does not count towards the length).
+The length field refers to the number of octets in the payload portion of this chunk (the message chunk header itself does not count towards the length).
 
 #### Request ID
 
@@ -315,9 +317,7 @@ Note that interleaved chunks for other IDs don't affect this behavior:
 
     [ID 5, 4004 bytes] [ID x, y bytes] ... [ID 5, 0 bytes + termination]
 
-If an `empty termination` is the first chunk for its ID (not preceded by non-empty, non-terminated chunks for the same ID), it is either an `empty response` (response = 1) or an [out of band](#out-of-band-messages) `ping` (response = 0):
-
-    [ID 7, 0 bytes + termination]
+If an `empty termination` is the first chunk for its ID (not preceded by non-empty, non-terminated chunks for the same ID), it is either an [out of band](#out-of-band-messages) `ping` (response = 0), or an `empty response` (response = 1).
 
 #### Empty Response
 
@@ -341,7 +341,7 @@ The `cancel` message cancels a request in progress. The ID field specifies the r
 
 #### Cancel Ack
 
-Sent to acknowledge a `cancel` request. The operation is canceled, and all queued responses to that request ID are removed. Once this is done, the serving peer sends a `cancel ack`. If the request doesn't exist (possibly because it had already completed), the serving peer must still send a `cancel ack`, because the other peer's ID will remain locked until an ack is received.
+Sent to acknowledge a `cancel` request. The operation is canceled, and all queued response chunks to that request ID are removed. Once this is done, the serving peer sends a `cancel ack`. If the request doesn't exist (possibly because it had already completed), the serving peer must still send a `cancel ack`, because the other peer's ID will remain locked until an ack is received.
 
 #### Ping
 
@@ -385,9 +385,9 @@ Implementations of this protocol must include message queue priority functionali
 Sending Messages
 ----------------
 
-Messages are sent in chunks. A multi-chunk message has its `termination bit` cleared to 0 for all but the last chunk. Single chunk messages always have the `termination bit` set.
+Messages are sent in chunks. A multi-chunk message has its `termination bit` cleared to `0` for all but the last chunk. Single chunk messages always have the `termination bit` set.
 
-The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. The `response bit` inverts the scope: A peer responds to a request by using the same request ID as it received from the requesting peer, and setting the response bit.
+The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. The `response bit` inverts the scope: A peer responds to a request by using the same request ID as it received from the requesting peer, and setting the response bit to `1`.
 
 ### Flow
 
@@ -424,7 +424,7 @@ Request Cancellation
 
 There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long. A requesting peer may cancel an outstanding request by sending a `cancel` message, citing the request ID of the request to be canceled.
 
-Once a `cancel` request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all responses to that request ID must be discarded. Once a `cancel ack` is received, the request ID is unlocked and may be used again.
+Once a `cancel` request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all response chunks to that request ID must be discarded. Once a `cancel ack` is received, the request ID is unlocked and may be used again.
 
 #### Example:
 
