@@ -10,72 +10,106 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 * Asynchronous (client is informed asynchronously upon completion or error)
 * Interruptible (requests may be canceled)
 * Floating roles (both peers can operate as client and server at the same time)
-* Quick init mode, requiring no round-trips
+* Quick init mode for faster initialization
 
-It is expected that a more application-specific messaging protocol will be layered on top of this protocol. Even something simple like using JSON objects for message contents would work (albeit wastefully).
+It is expected that a more application-specific message encoding (such as [CBE](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md)) will be layered on top of this protocol.
 
 
 
 General Operation
 -----------------
 
-Upon establishing a connection, each peer sends an initiator request and response, and then begins normal communications. Communication is asynchronous after the peer has sent an initiator response. A typical session might look something like this:
+Upon establishing a connection, each peer sends an initialize message, and then begins normal communications. Communication is asynchronous after initialization completes. A typical session might look something like this:
 
-| Peer X             | Peer Y             |
-| ------------------ | ------------------ |
-| Open Connection    | Open Connection    |
-|                    | Initiator Request  |
-| Initiator Request  |                    |
-| Initiator Response |                    |
-| Request A          | Initiator Response |
-| Request B          | Response A         |
-|                    | Request C          |
-| Response C         | Response B         |
-| ...                | ...                |
-| Close Connection   | Close Connection   |
+| Peer X           | Peer Y           |
+| ---------------- | ---------------- |
+| Open Connection  | Open Connection  |
+| Initialize       | Initialize       |
+| Request A        |                  |
+| Request B        | Response A       |
+|                  | Request C        |
+| Response C       | Response B       |
+| ...              | ...              |
+| Close Connection | Close Connection |
 
 
 
-Initiator Phase
----------------
+Initialization Phase
+--------------------
 
-Before a peer can send any other messages, it must first send an initiator request, and then respond to the other peer's initiator request.
-
-
-### Initiator Request
-
-The initiator request negotiates various properties that will be used for the duration of the current session. It must be sent once and only once, as the first message to the other peer.
-
-| Octet 0 | Octet 1          | Octet 2      | Octet 3 |
-| ------- | ---------------- | ------------ | ------- |
-| Version | Length Bit Count | ID Bit Count | Flags   |
+Before a peer can send any other messages, it must first send and receive an initialize message. The initialize message negotiates various parameters that will be used for the duration of the current session. It must be sent once and only once, as the first message to the other peer.
 
 
-#### Version
+### Initialize Message Layout
 
-Requests a particular protocol version. The decided protocol version will be the minimum of the two peers. A peer may not support versions that low, and would in such a case send a reject response. `0` is an invalid value.
+The initialize message is a string of bits 6 octets long, containing the following fields, in the following order:
 
-Currently, only version 1 exists.
+| Field                 | Bits | Min | Max |
+| --------------------- | ---- | --- | --- |
+| Min Protocol Version  |   8  |  1  | 255 |
+| Max Protocol Version  |   8  |  1  | 255 |
+| Quick Init Request    |   1  |  0  |   1 |
+| Quick Init Allowed    |   1  |  0  |   1 |
+| Min Length Bits       |   5  |  1  |  15 |
+| Max Length Bits       |   5  |  1  |  30 |
+| Recommend Length Bits |   5  |  1  |  31 |
+| Min ID Bits           |   5  |  0  |  15 |
+| Max ID Bits           |   5  |  0  |  30 |
+| Recommend ID Bits     |   5  |  0  |  31 |
+
+#### Min, Max Protocol Version
+
+Specifies the minimum and maximum protocol versions supported by this peer.
+
+#### Quick Init Request, Allowed
+
+These fields are used to negotiate a [Quick Init](#quick-init).
+
+#### Length and ID Bits: Min, Max, Recommended
+
+These fields are used to negotiate how many bits will be used for the length and ID fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to make a number of unlikely edge cases impossible. A peer must not set a maximum value to be smaller than its corresponding minimum value. Its recommend value must be within its own valid range (min to max).
 
 
-#### Length and ID Bit Counts
+### Negotiation Phase
 
-Length and ID bit counts determine how many bits will be used for the length and ID fields in message chunk headers. The decided size for each field will be the minimum of the values provided by each peer.
+When a peer has received the other peer's initialize message, negotiation of their parameters begins. Both sides follow the same negotiation logic, so there is no need for a response to the initialize message. Negotiation will either succeed or fail, and both peers will follow the same algorithm to reach an identical conclusion.
 
-The message chunk header has up to 30 bits that may be used to encode the `length` and `id` fields. The more bits selected for use, the wider the message header will be:
+If negotiation succeeds, the peers may begin sending normal messages. If negotiation fails, the session is dead, and the peers should disconnect.
 
-| Total Bits Used | Message Header Size |
-| --------------- | ------------------- |
-| 1-6             | 1 octet             |
-| 7-14            | 2 octets            |
-| 15-22           | 3 octets            |
-| 23-30           | 4 octets            |
+#### Protocol Version
 
-It is an error to specify a total bit count greater than 30.
+The chosen protocol version will be the highest version supported by both peers. If there are no versions supported by both peers, negotiation fails.
 
-Note: A length bit count of 0 is invalid. An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0).
+    min = maximum(us.min_protocol, them.min_protocol)
+    max = minimum(us.max_protocol, them.max_protocol)
+    if max < min: fail
+    negotiated protocol version = max
 
-##### Bit Count Considerations
+#### Length and ID Bit Count
+
+This part of the negotiation determines how many bits will be used to represent the `length` field and `id` field in all [message chunk headers](#message-header-encoding) for this session.
+
+Negotiation of the `length` and `id` fields uses the corresponding `min`, `max`, and `recommended` fields in the initialize message:
+
+    min = maximum(us.min, them.min)
+    max = minimum(us.max, them.max)
+    if max < min: fail
+    recommend = minimum(us.recommend, them.recommend)
+    negotiated value = minimum(maximum(recommend, min), max)
+
+Peers may also use the "wildcard" value (31) in their `recommend` fields, meaning that they offer no recommendation, and will defer to the other peer. This changes how `recommend` is calculated:
+
+    if us.recommend = wildcard: recommend = them.recommend
+    if them.recommend = wildcard: recommend = us.recommend
+    if both us and them use wildcard: recommend = (max-min)/2 + min, rounding up
+    negotiated value = minimum(maximum(recommend, min), max)
+
+After the initial length and ID bit width negotiations are completed, the total bits must be brought down to 30 if they happen to be over:
+
+    while length.negotiated + id.negotiated > 30:
+        decrement the larger of (length.negotiated and id.negotiated) by 1
+
+#### Bit Count Considerations
 
 The choice of bit counts will affect the characteristics of the session. Depending on your use case and operating environment, certain aspects will be more important than others:
 
@@ -84,152 +118,167 @@ The choice of bit counts will affect the characteristics of the session. Dependi
 * Small ID bit count: Limits the maximum number of simultaneous outstanding requests.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding requests.
 
-##### Bit Count Wildcard Values
+Note: An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0). A length bit count of 0 is invalid.
 
-The value `255`, which would normally be invalid, has special meaning as the "wildcard" value when specifying a bit count. When a peer uses a wildcard value for a bit count, it is stating that it doesn't care what the end value will be.
+The total number of bits negotiated (length bits + ID bits) will also determine the [message chunk header](#message-header-encoding) size for the duration of the session:
 
-* If one peer uses the wildcard value and the other does not, the non-wildcard value is chosen.
-* If one bit count field is set to the wildcard value by both peers, the result is 30 minus the other bit count field result, to a maximum of 15 bits.
-* If both bit count fields are set to the wildcard value by both peers, the result is 15 length bits and 15 ID bits.
-
-It is recommended for peers that provide primarily "server" functionality to use wildcard values, which allows client peers (who are likely to have more network condition variance) to control these values.
-
-##### Bit Count Examples
-
-| Peer    | Length Bits | ID Bits |
-| ------- | ----------- | ------- |
-| Peer A  |      20     |    10   |
-| Peer B  |      10     |    12   |
-| Result  |      10     |    10   |
-
-
-| Peer    | Length Bits | ID Bits |
-| ------- | ----------- | ------- |
-| Peer A  |     255     |     5   |
-| Peer B  |       9     |     7   |
-| Result  |       9     |     5   |
-
-
-| Peer    | Length Bits | ID Bits |
-| ------- | ----------- | ------- |
-| Peer A  |      18     |   255   |
-| Peer B  |      16     |   255   |
-| Result  |      16     |    14   |
-
-
-| Peer    | Length Bits | ID Bits |
-| ------- | ----------- | ------- |
-| Peer A  |     255     |   255   |
-| Peer B  |     255     |   255   |
-| Result  |      15     |    15   |
-
-
-#### Flags
-
-The flags enable or request certain features.
-
-| Position | Meaning                |
-| -------- | ---------------------- |
-| 7 (0x80) | Quick Init Request     |
-| 6 (0x40) | Quick Init Allowed     |
-| 5 (0x20) | reserved, cleared to 0 |
-| 4 (0x10) | reserved, cleared to 0 |
-| 3 (0x08) | reserved, cleared to 0 |
-| 2 (0x04) | reserved, cleared to 0 |
-| 1 (0x02) | reserved, cleared to 0 |
-| 0 (0x01) | reserved, cleared to 0 |
-
-Quick init flags will be discussed in section [Quick Init](#quick-init).
-
-
-### Initiator Response
-
-An initiator response must be sent only once, in response to an initiator request.
-
-| Octet 0                           |
-| --------------------------------- |
-| `0` (accept), or nonzero (reject) |
-
-If a peer rejects the other's initiator request, the session is now considered "dead": All messages must be ignored, and the connection should be closed. This can happen if the negotiated parameters are something that the peer cannot or does not want to accommodate, or if the initiator request was malformed.
-
-If a peer accepts the other's initiator request, this side of the session is now established, and the peer may begin sending normal messages.
-
-| Peer A            | Peer B            | Notes                               |
-| ----------------- | ----------------- | ----------------------------------- |
-| Initiator Request | Initiator Request |                                     |
-|                   | Initiator Accept  | Peer B may now send normal messages |
-| Initiator Accept  |                   | Peer A may now send normal messages |
-
-
-### Initiator Message Flow
-
-The initiator flow is gated on each side to the other's initiator request, because it is needed in order to formulate an initiator response. Once a peer has sent an initiator response of `accept`, it is free to begin sending normal messages, even if it hasn't yet received the other peer's response. If it turns out that the other peer has rejected the initiator request, the session is dead anyway, and none of the sent requests will have been processed.
-
-#### Successful Flow
-
-* Peer A: initiator request
-* Peer B: initiator request
-* Peer B: initiator accept
-* Peer B: request ID 0
-* Peer A: initiator accept
-* Peer A: response ID 0
-
-In this example, Peer A was a little slow to respond, and Peer B went ahead with messaging after responding to Peer A's initiator request. Since Peer A eventually accepted the initiator request, everything is OK, and request 0 gets processed.
-
-#### Failure Flow
-
-* Peer A: initiator request
-* Peer B: initiator request
-* Peer B: initiator accept
-* Peer B: request ID 0
-* Peer A: initiator reject
-
-In this example, Peer A is once again slow to respond, and Peer B once again goes ahead with messaging, but it turns out that Peer A eventually rejects the initiator request. Request 0 never gets processed or responded to by Peer A because the session is dead. The peers must now disconnect.
+| Total Bits Negotiated | Message Header Size |
+| --------------------- | ------------------- |
+| 1-6                   | 1 octet             |
+| 7-14                  | 2 octets            |
+| 15-22                 | 3 octets            |
+| 23-30                 | 4 octets            |
 
 
 ### Quick Init
 
-There may be times when the normal initiator flow is considered too chatty. In such a case, peers may elect to quick init, which eliminates gating on the initial request-response by automatically choosing the init values from the "client-y" peer. A "server-y" peer may elect to allow quick init, meaning that it is willing to disregard its own initiator request and use the client's recommendations instead (as if the server had used wildcard values for length and ID). Only the "server-y" side (the side that sets `quick init allowed` = 1) sends an `initiator response` during a quick init.
+There may be times when the normal initialization message gating delay is unacceptable. In such a case, peers may elect to quick init. Quick init reduces session startup time, but increases the risk of a failed negotiation.
 
-Note: Protocol version negotiation occurs the same as in the normal initiator flow (the lowest of the two versions is chosen).
+I will describe a "client" peer as a peer with `quick init request` set to true, and a "server" peer as a peer with `quick init allowed` set to true. A peer must not have both `quick init request` and `quick init allowed` set to true.
 
-#### Successful Flow
+On a successful quick init, the "server" peer disregards its own recommended values and chooses the "client" peer's recommended values instead (as if the server had used wildcard values for length and ID). This means that the "client" peer doesn't need to wait for the "server" peer's initialization message to arrive before it can start sending normal messages, because it can precompute the parameters that will be negotiated (assuming negotiation succeeds).
 
-* Peer A: initiator request with `quick init request` = 1
-* Peer A: request ID 0
-* Peer B: initiator request with `quick init allowed` = 1
-* Peer B: initiator accept
-* Peer B: response ID 0
+A "client" peer requesting a quick init makes the following additional assumptions:
 
-Peer A doesn't wait for Peer B's `initiator request` before sending normal messages, simply assuming everything will be fine. Once Peer B's request arrives, both sides understand that they are in agreement, and message processing continues normally. Peer B must of course wait for Peer A's `initiator request` before it can send any messages. Peer B may still choose to reject Peer A's initiator request if it cannot or will not accommodate the parameters.
+- The potential "server" peer will have `quick init allowed` set to true.
+- The "client" peer's recommended values will be within the "server" peer's minimums and maximums.
 
-#### Failure Flow
-
-* Peer A: initiator request with `quick init request` = 1
-* Peer A: request ID 0
-* Peer B: initiator request with `quick init allowed` = 0
-* Negotiation failed (no further messages sent)
-
-In this case, Peer B doesn't allow quick init, and so session initialization fails. Request ID 0 was ignored, and the session is dead. Both sides disconnect. The client may of course elect to connect again with `quick init request` = 0, following the normal initiator flow instead.
-
-#### Quick Init Rules
+If any of the assumptions prove false, the negotiation will fail. Because of this, quick init should only be used when a "client" peer has a good idea of the parameters the "server" peer will use.
 
 | Peer A QR | Peer B QR | Peer A QA | Peer B QA | Result                         |
 | --------- | --------- | --------- | --------- | ------------------------------ |
-|     0     |     0     |     -     |     -     | Normal initiator flow          |
+|     0     |     0     |     -     |     -     | Normal initialization flow     |
 |     1     |     0     |     0     |     1     | Quick init using Peer A values |
 |     0     |     1     |     1     |     0     | Quick init using Peer B values |
 |     1     |     -     |     -     |     0     | Negotiation Failure            |
 |     -     |     1     |     0     |     -     | Negotiation Failure            |
 |     1     |     1     |     -     |     -     | Negotiation Failure            |
-|     1     |     -     |     1     |     -     | Invalid                        |
-|     -     |     1     |     -     |     1     | Invalid                        |
+|     1     |     -     |     1     |     -     | Invalid (negotiation failure)  |
+|     -     |     1     |     -     |     1     | Invalid (negotiation failure)  |
 
-* QR = `quick init request`
-* QA = `quick init allowed`
-* - = don't care
+* QR  = `quick init request`
+* QA  = `quick init allowed`
+* `-` = don't care
 
-There must be agreement outside of the protocol about which peer shall be "client-y" and which shall be "server-y" before using quick connect. If the peers do not have a-priori agreement about their respective roles, they are likely to both set `quick init request` and then fail negotiation.
+
+#### Quick Init vs Normal Initialization Flow
+
+With normal initialization flow, both peers are gated on the other's initialize message:
+
+| "Client" Peer | "Server" Peer |
+| ------------- | ------------- |
+| Initialize    |               |
+|               | Initialize    |
+| Request A     |               |
+| Request B     | Response A    |
+|               | Response B    |
+
+Quick init allows the "client" peer to begin sending messages immediately:
+
+| "Client" Peer | "Server" Peer |
+| ------------- | ------------- |
+| Initialize    |               |
+| Request A     |               |
+| Request B     | Initialize    |
+|               | Response A    |
+|               | Response B    |
+
+In this case, the "server" peer is slow to respond for some reason, but that doesn't stop the "client" peer from sending requests before receiving the "server" peer's initialize message.
+
+Should the negotiation ultimately fail, the "server" peer would only send the initialize message, and then ignore everything else:
+
+| "Client" Peer | "Server" Peer |
+| ------------- | ------------- |
+| Initialize    |               |
+| Request A     |               |
+| Request B     | Initialize    |
+
+Upon receiving the "server" peer's initialize message, the "client" peer would realize that initialization failed, and end the session.
+
+
+### Negotiation Examples
+
+#### Case: All parameters are compatible
+
+| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |      6     |     20     |     14     |    6   |   12   |    8   |
+| Peer B |      5     |     15     |     15     |    6   |   15   |    7   |
+| Result |      6     |     15     |     14     |    6   |   12   |    7   |
+
+Negotiation: Success
+
+#### Case: Max ID < Min ID
+
+| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |      5     |     12     |     12     |    6   |    8   |    8   |
+| Peer B |      5     |     15     |     15     |   10   |   15   |   10   |
+| Result |      5     |     12     |     12     |   10   |    8   |    8   |
+
+Negotiation: Fail
+
+#### Case: Wildcard, initial negotiated values total > 30
+
+| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |      6     |     20     |     31     |    6   |   16   |   15   |
+| Peer B |     15     |     18     |     31     |    6   |   18   |   15   |
+| Result |     15     |     18     |     17     |    6   |   16   |   15   |
+
+In this case, both peer A and B used wildcard values for recommended length, resulting in (18-15)/2 + 15, rounded up, which is 17. The resulting values (length 17, id 15) are greater than 30, so we start decrementing the largest value: (length 17 -> 16),  (length 16 -> 15).
+
+Negotiation: Success
+
+#### Case: All recommended values use wildcard
+
+| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |      6     |     20     |     31     |    6   |   16   |   31   |
+| Peer B |      8     |     15     |     31     |    6   |   18   |   31   |
+| Result |      8     |     15     |     12     |    6   |   16   |   11   |
+
+Length is (15-8)/2 + 8, rounded up = 12.
+
+ID is (16-6)/2 + 6 = 11.
+
+Negotiation: Success
+
+#### Case: Peer A requests quick init, and peer B allows quick init
+
+| Peer   | Quick Req | Quick Allow | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | --------- | ----------- | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |     1     |      0      |     10     |     18     |     14     |    8   |   15   |    8   |
+| Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
+| Result |     -     |      -      |     10     |     15     |     14     |    8   |   15   |    8   |
+
+Since we are using quick init, Peer A's recommended values are chosen, and Peer B's recommended values are ignored (as if they were wildcard values).
+
+Negotiation: Success
+
+#### Case: Peer A requests quick init using values peer B doesn't support
+
+| Peer   | Quick Req | Quick Allow | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | --------- | ----------- | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |     1     |      0      |     10     |     18     |     16     |    8   |   15   |    8   |
+| Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
+| Result |     -     |      -      |     10     |     18     |    fail    |    8   |   15   |    8   |
+
+Peer A's recommendeded length is higher than peer B's max.
+
+Negotiation: Fail
+
+#### Case: Peer B allows quick init, but peer A doesn't request quick init
+
+| Peer   | Quick Req | Quick Allow | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
+| ------ | --------- | ----------- | ---------- | ---------- | ---------- | ------ | ------ | ------ |
+| Peer A |     0     |      0      |     10     |     18     |     14     |    8   |   15   |    8   |
+| Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
+| Result |     -     |      -      |     10     |     15     |     10     |    8   |   15   |    8   |
+
+Since quick init wasn't requested, Peer B's `quick allow` has no effect, and negotiation follows the normal flow.
+
+Negotiation: Success
 
 
 
@@ -246,7 +295,7 @@ Normal messages are sent in chunks, consisting of a message chunk header, follow
 
 ### Message Header Encoding
 
-The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format. The header size is determined by the field length choices in the [initiator request](#initiator-request):
+The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format. The header size is determined by the field length choices in the [initialization phase](#initialization-phase):
 
 | Min Bit Size | Max Bit Size | Header Size |
 | ------------ | ------------ | ----------- |
