@@ -24,7 +24,8 @@ Upon establishing a connection, each peer sends an initialize message, and then 
 | Peer X           | Peer Y           |
 | ---------------- | ---------------- |
 | Open Connection  | Open Connection  |
-| Initialize       | Initialize       |
+|                  | Initialize       |
+| Initialize       |                  |
 | Request A        |                  |
 | Request B        | Response A       |
 |                  | Request C        |
@@ -42,24 +43,23 @@ Before a peer can send any other messages, it must first send and receive an ini
 
 ### Initialize Message Layout
 
-The initialize message is a string of bits 6 octets long, containing the following fields, in the following order:
+The initialize message is a string of 40 bits, containing the following fields in the following order:
 
-| Field                 | Bits | Min | Max |
-| --------------------- | ---- | --- | --- |
-| Min Protocol Version  |   8  |  1  | 255 |
-| Max Protocol Version  |   8  |  1  | 255 |
-| Quick Init Request    |   1  |  0  |   1 |
-| Quick Init Allowed    |   1  |  0  |   1 |
-| Min Length Bits       |   5  |  1  |  15 |
-| Max Length Bits       |   5  |  1  |  30 |
-| Recommend Length Bits |   5  |  1  |  31 |
-| Min ID Bits           |   5  |  0  |  15 |
-| Max ID Bits           |   5  |  0  |  30 |
-| Recommend ID Bits     |   5  |  0  |  31 |
+| Field                   | Bits | Min | Max |
+| ----------------------- | ---- | --- | --- |
+| Protocol Version        |   8  |  1  | 255 |
+| Quick Init Request      |   1  |  0  |   1 |
+| Quick Init Allowed      |   1  |  0  |   1 |
+| Min Length Bits         |   5  |  1  |  15 |
+| Max Length Bits         |   5  |  1  |  30 |
+| Recommended Length Bits |   5  |  1  |  31 |
+| Min ID Bits             |   5  |  0  |  15 |
+| Max ID Bits             |   5  |  0  |  30 |
+| Recommended ID Bits     |   5  |  0  |  31 |
 
-#### Min, Max Protocol Version
+#### Protocol Version
 
-Specifies the minimum and maximum protocol versions supported by this peer.
+The protocol version the peer expects to use. In this specification, it is protocol version 1.
 
 #### Quick Init Request, Allowed
 
@@ -67,7 +67,7 @@ These fields are used to negotiate a [Quick Init](#quick-init).
 
 #### Length and ID Bits: Min, Max, Recommended
 
-These fields are used to negotiate how many bits will be used for the length and ID fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to make a number of unlikely edge cases impossible. A peer must not set a maximum value to be smaller than its corresponding minimum value. Its recommend value must be within its own valid range (min to max).
+These fields negotiate how many bits will be used for the length and ID fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to simplify processing and make a number of edge cases impossible. A peer must not set a `max` value to be smaller than its corresponding `min` value. Its `recommended` value must be within its own valid range `min` to `max` (unless it is the wildcard value `31`). Invalid values automatically cause negotiation to fail.
 
 
 ### Negotiation Phase
@@ -78,49 +78,52 @@ If negotiation succeeds, the peers may begin sending normal messages. If negotia
 
 #### Protocol Version
 
-The chosen protocol version will be the highest version supported by both peers. If there are no versions supported by both peers, negotiation fails.
-
-    min = maximum(us.min_protocol, them.min_protocol)
-    max = minimum(us.max_protocol, them.max_protocol)
-    if max < min: fail
-    negotiated protocol version = max
+The peers must agree about the protocol version to use. If they do not, negotiation fails.
 
 #### Length and ID Bit Count
 
 This part of the negotiation determines how many bits will be used to represent the `length` field and `id` field in all [message chunk headers](#message-header-encoding) for this session.
 
-Negotiation of the `length` and `id` fields uses the corresponding `min`, `max`, and `recommended` fields in the initialize message:
+Negotiation of the `length` and `id` fields uses the corresponding `min`, `max`, and `recommended` fields in the initialize message.
+
+Min, max (for `length` and `id`):
 
     min = maximum(us.min, them.min)
     max = minimum(us.max, them.max)
     if max < min: fail
-    recommend = minimum(us.recommend, them.recommend)
-    negotiated value = minimum(maximum(recommend, min), max)
 
-Peers may also use the "wildcard" value (31) in their `recommend` fields, meaning that they offer no recommendation, and will defer to the other peer. This changes how `recommend` is calculated:
+Recommended (for `length` and `id`):
 
-    if us.recommend = wildcard: recommend = them.recommend
-    if them.recommend = wildcard: recommend = us.recommend
-    if both us and them use wildcard: recommend = (max-min)/2 + min, rounding up
-    negotiated value = minimum(maximum(recommend, min), max)
+    recommended = minimum(us.recommended, them.recommended)
+
+Peers may also use the "wildcard" value (31) in their `recommended` fields, meaning that they offer no recommendation, and will defer to the other peer. This changes how `recommended` is calculated:
+
+    if us.recommended = wildcard: recommended = them.recommended
+    if them.recommended = wildcard: recommended = us.recommended
+    if both us and them use wildcard: recommended = (max-min)/2 + min, rounding up
+
+Negotiated value (for `length` and `id`):
+
+    negotiated value = minimum(maximum(recommended, min), max)
 
 After the initial length and ID bit width negotiations are completed, the total bits must be brought down to 30 if they happen to be over:
 
-    while length.negotiated + id.negotiated > 30:
-        decrement the larger of (length.negotiated and id.negotiated) by 1
+    if length.negotiated + id.negotiated > 30:
+        if both are > 15: reduce both to 15
+        else: (larger value) = 30 - (smaller value)
 
 #### Bit Count Considerations
 
 The choice of bit counts will affect the characteristics of the session. Depending on your use case and operating environment, certain aspects will be more important than others:
 
-* Small length bit count: Increases the marginal costs of the header, causing data wastage.
+* Small length bit count: Increases the marginal costs of the header, losing useful bandwidth to overhead.
 * Large length bit count: Increases the buffer size required to support the maximum message chunk length.
 * Small ID bit count: Limits the maximum number of simultaneous outstanding requests.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding requests.
 
 Note: An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0). A length bit count of 0 is invalid.
 
-The total number of bits negotiated (length bits + ID bits) will also determine the [message chunk header](#message-header-encoding) size for the duration of the session:
+The total number of bits negotiated (length bits + ID bits) will determine the [message chunk header](#message-header-encoding) size for the duration of the session:
 
 | Total Bits Negotiated | Message Header Size |
 | --------------------- | ------------------- |
@@ -132,16 +135,16 @@ The total number of bits negotiated (length bits + ID bits) will also determine 
 
 ### Quick Init
 
-There may be times when the normal initialization message gating delay is unacceptable. In such a case, peers may elect to quick init. Quick init reduces session startup time, but increases the risk of a failed negotiation.
+There may be times when the normal initialization message gating delay is unacceptable. In such a case, peers may elect to quick init. Quick init eliminates the session startup delay before a "client" peer can start sending normal messages, but increases the risk of a failed negotiation (which can be mitigated by outside knowledge).
 
-I will describe a "client" peer as a peer with `quick init request` set to true, and a "server" peer as a peer with `quick init allowed` set to true. A peer must not have both `quick init request` and `quick init allowed` set to true.
+I will describe a "client" peer as a peer with `quick init request` set to true, and a "server" peer as a peer with `quick init allowed` set to true. A peer must not have both `quick init request` and `quick init allowed` set to true. A peer must not use wildcard values if its `quick init request` is set to true.
 
 On a successful quick init, the "server" peer disregards its own recommended values and chooses the "client" peer's recommended values instead (as if the server had used wildcard values for length and ID). This means that the "client" peer doesn't need to wait for the "server" peer's initialization message to arrive before it can start sending normal messages, because it can precompute the parameters that will be negotiated (assuming negotiation succeeds).
 
-A "client" peer requesting a quick init makes the following additional assumptions:
+A "client" peer requesting a quick init makes the following assumptions:
 
 - The potential "server" peer will have `quick init allowed` set to true.
-- The "client" peer's recommended values will be within the "server" peer's minimums and maximums.
+- The "client" peer's recommended values will be within the "server" peer's chosen minimums and maximums.
 
 If any of the assumptions prove false, the negotiation will fail. Because of this, quick init should only be used when a "client" peer has a good idea of the parameters the "server" peer will use.
 
@@ -163,7 +166,7 @@ If any of the assumptions prove false, the negotiation will fail. Because of thi
 
 #### Quick Init vs Normal Initialization Flow
 
-With normal initialization flow, both peers are gated on the other's initialize message:
+With normal initialization flow, both peers are gated on the other's initialize message, which induces some delay before useful message flow begins:
 
 | "Client" Peer | "Server" Peer |
 | ------------- | ------------- |
@@ -183,7 +186,7 @@ Quick init allows the "client" peer to begin sending messages immediately:
 |               | Response A    |
 |               | Response B    |
 
-In this case, the "server" peer is slow to respond for some reason, but that doesn't stop the "client" peer from sending requests before receiving the "server" peer's initialize message.
+In this contrived example, the "server" peer is slow to respond for some reason, but that doesn't stop the "client" peer from sending requests before receiving the "server" peer's initialize message.
 
 Should the negotiation ultimately fail, the "server" peer would only send the initialize message, and then ignore everything else:
 
@@ -193,7 +196,7 @@ Should the negotiation ultimately fail, the "server" peer would only send the in
 | Request A     |               |
 | Request B     | Initialize    |
 
-Upon receiving the "server" peer's initialize message, the "client" peer would realize that initialization failed, and end the session.
+Upon receiving the "server" peer's initialize message, the "client" peer would run the same negotiation algorithm, realize that initialization failed, and end the session.
 
 
 ### Negotiation Examples
@@ -206,7 +209,7 @@ Upon receiving the "server" peer's initialize message, the "client" peer would r
 | Peer B |      5     |     15     |     15     |    6   |   15   |    7   |
 | Result |      6     |     15     |     14     |    6   |   12   |    7   |
 
-Negotiation: Success
+Negotiation: **Success**
 
 #### Case: Max ID < Min ID
 
@@ -216,19 +219,19 @@ Negotiation: Success
 | Peer B |      5     |     15     |     15     |   10   |   15   |   10   |
 | Result |      5     |     12     |     12     |   10   |    8   |    8   |
 
-Negotiation: Fail
+Negotiation: **Fail**
 
 #### Case: Wildcard, initial negotiated values total > 30
 
 | Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
 | ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |      6     |     20     |     31     |    6   |   16   |   15   |
+| Peer A |      6     |     20     |     31     |    6   |   16   |   14   |
 | Peer B |     15     |     18     |     31     |    6   |   18   |   15   |
-| Result |     15     |     18     |     17     |    6   |   16   |   15   |
+| Result |     15     |     18     |     16     |    6   |   16   |   14   |
 
-In this case, both peer A and B used wildcard values for recommended length, resulting in (18-15)/2 + 15, rounded up, which is 17. The resulting values (length 17, id 15) are greater than 30, so we start decrementing the largest value: (length 17 -> 16),  (length 16 -> 15).
+In this case, both peer A and B used wildcard values for recommended length, resulting in (18-15)/2 + 15, rounded up, which is 17. The resulting values (length 17, id 14) are greater than 30, so the larger value is reduced (30 - 14 = 16).
 
-Negotiation: Success
+Negotiation: **Success**
 
 #### Case: All recommended values use wildcard
 
@@ -242,7 +245,7 @@ Length is (15-8)/2 + 8, rounded up = 12.
 
 ID is (16-6)/2 + 6 = 11.
 
-Negotiation: Success
+Negotiation: **Success**
 
 #### Case: Peer A requests quick init, and peer B allows quick init
 
@@ -254,7 +257,7 @@ Negotiation: Success
 
 Since we are using quick init, Peer A's recommended values are chosen, and Peer B's recommended values are ignored (as if they were wildcard values).
 
-Negotiation: Success
+Negotiation: **Success**
 
 #### Case: Peer A requests quick init using values peer B doesn't support
 
@@ -264,9 +267,9 @@ Negotiation: Success
 | Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
 | Result |     -     |      -      |     10     |     18     |    fail    |    8   |   15   |    8   |
 
-Peer A's recommendeded length is higher than peer B's max.
+Peer A's recommendeded length (16) is higher than peer B's max (15).
 
-Negotiation: Fail
+Negotiation: **Fail**
 
 #### Case: Peer B allows quick init, but peer A doesn't request quick init
 
@@ -278,7 +281,7 @@ Negotiation: Fail
 
 Since quick init wasn't requested, Peer B's `quick allow` has no effect, and negotiation follows the normal flow.
 
-Negotiation: Success
+Negotiation: **Success**
 
 
 
@@ -295,7 +298,7 @@ Normal messages are sent in chunks, consisting of a message chunk header, follow
 
 ### Message Header Encoding
 
-The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian format. The header size is determined by the field length choices in the [initialization phase](#initialization-phase):
+The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian byte order. The header size is determined by the field length choices in the [initialization phase](#initialization-phase):
 
 | Min Bit Size | Max Bit Size | Header Size |
 | ------------ | ------------ | ----------- |
@@ -335,7 +338,7 @@ The length field refers to the number of octets in the payload portion of this c
 
 #### Request ID
 
-The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still in-flight (IDs that have been sent to the peer but have not yet received a response, or have been canceled but not yet acked). The requesting peer must not re-use IDs that are currently in-flight.
+The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still in-flight (IDs that have been sent to the peer but have not yet received a response, or have been canceled but not yet cancel acked). The requesting peer must not re-use IDs that are currently in-flight.
 
 Request IDs are scoped to the requesting peer. For example, request ID 22 from peer A is distinct from request ID 22 from peer B.
 
@@ -347,7 +350,7 @@ The response bit is used to respond to a request sent by a peer. When set, the I
 
 #### Termination
 
-The termination bit indicates that this is the final chunk for this request ID (either as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to 0 for all but the last chunk.
+The termination bit indicates that this is the final chunk for this request ID (as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to 0 for all but the last chunk.
 
 
 ### Special Cases
