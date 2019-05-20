@@ -55,7 +55,7 @@ The initialize message is a string of 40 bits, containing the following fields i
 | Max Length Bits         |   5  |  1  |  30 |
 | Recommended Length Bits |   5  |  1  |  31 |
 | Min ID Bits             |   4  |  0  |  15 |
-| Max ID Bits             |   5  |  0  |  30 |
+| Max ID Bits             |   5  |  0  |  29 |
 | Recommended ID Bits     |   5  |  0  |  31 |
 
 #### Protocol Version
