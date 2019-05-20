@@ -367,22 +367,20 @@ vs
 
 Note that interleaved chunks for other IDs don't affect this behavior:
 
-    [ID 5, 4004 bytes] [ID x, y bytes] ... [ID 5, 0 bytes + termination]
+    [ID 5, 4004 bytes] [ID 2, 1020 bytes] ... [ID 5, 0 bytes + termination]
 
-If an `empty termination` is the first chunk for its ID (not preceded by non-empty, non-terminated chunks for the same ID), it is either an [out of band](#out-of-band-messages) `ping` (response = 0), or an `empty response` (response = 1).
+If an `empty termination` is the only chunk for its ID (i.e. the entire message is 1 chunk, 0 bytes long), it is an `empty message`. An `empty message` can either be an [out of band](#out-of-band-messages) `ping` (response = 0), or an `empty response` (response = 1).
 
 #### Empty Response
 
-An `empty response` is an `empty termination` response (length = 0, response = 1, termination = 1) with no preceding non-empty, non-terminated response chunks of the same ID.
-
-`empty response` signals successful completion of the request with no other data to report.
+An `empty response` is an `empty message` with the response bit set to 1. `empty response` signals successful completion of the request, with no other data to report.
 
 
 
 Out of Band Messages
 --------------------
 
-This section lists out-of-band messages, which are necessary to the efficient operation of the session. Two of them overlap with normal messages (see [special cases](#special-cases)), and are considered out-of-band only in special circumstances.
+This section lists out-of-band messages, which are necessary to the efficient operation of the session. Two of them overlap with normal messages (see [special cases](#special-cases)), and are considered out-of-band only in special circumstances. OOB messages are sent with a higher priority than all other messages.
 
 
 ### OOB Message Types
@@ -393,11 +391,11 @@ The `cancel` message cancels a request in progress. The ID field specifies the r
 
 #### Cancel Ack
 
-Sent to acknowledge a `cancel` request. The operation is canceled, and all queued response chunks to that request ID are removed. Once this is done, the serving peer sends a `cancel ack`. If the request doesn't exist (possibly because it had already completed), the serving peer must still send a `cancel ack`, because the other peer's ID will remain locked until an ack is received.
+Sent to acknowledge a `cancel` request. The serving peer cancels the operation, removes all queued response chunks to that request ID, and then sends a `cancel ack`. If the request doesn't exist (possibly because it had already completed), the serving peer must still send a `cancel ack`, because the other peer's ID will remain locked until an ack is received.
 
 #### Ping
 
-A `ping` requests a `ping ack` from the peer. Upon receiving a `ping`, a peer must send `ping ack` as quickly as possible. `ping` is useful for gauging latency, and as a "keep-alive" mechanism over mediums that close idle sessions.
+A `ping` requests a `ping ack` from the peer. Upon receiving a `ping`, a peer must send a `ping ack` as early as possible. `ping` is useful for gauging latency, and as a "keep-alive" mechanism over mediums that close idle sessions.
 
 #### Ping Ack
 
@@ -421,7 +419,7 @@ The OOB message types `ping` and `ping ack` share encodings with request `empty 
 
 #### Empty Termination vs Ping
 
-If an `empty termination` request is the first chunk (not preceded by non-empty, non-terminated request chunks of the same ID), it is considered a `ping` message.
+An `empty message` request (an `empty termination` where the entire message is 0 bytes long, and `response` = 0) is considered a `ping` message.
 
 #### Empty Response vs Ping Ack
 
