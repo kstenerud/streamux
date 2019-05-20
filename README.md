@@ -48,12 +48,13 @@ The initialize message is a string of 40 bits, containing the following fields i
 | Field                   | Bits | Min | Max |
 | ----------------------- | ---- | --- | --- |
 | Protocol Version        |   8  |  1  | 255 |
+| Unused (reserved)       |   2  |  0  |   0 |
 | Quick Init Request      |   1  |  0  |   1 |
 | Quick Init Allowed      |   1  |  0  |   1 |
-| Min Length Bits         |   5  |  1  |  15 |
+| Min Length Bits         |   4  |  1  |  15 |
 | Max Length Bits         |   5  |  1  |  30 |
 | Recommended Length Bits |   5  |  1  |  31 |
-| Min ID Bits             |   5  |  0  |  15 |
+| Min ID Bits             |   4  |  0  |  15 |
 | Max ID Bits             |   5  |  0  |  30 |
 | Recommended ID Bits     |   5  |  0  |  31 |
 
