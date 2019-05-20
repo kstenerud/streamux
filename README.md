@@ -12,7 +12,18 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 * Floating roles (both peers can operate as client and server at the same time)
 * Quick init mode for faster initialization
 
-It is expected that a more application-specific message encoding (such as [CBE](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md)) will be layered on top of this protocol.
+
+
+Use Case
+--------
+
+Streamux is designed as a low level, point-to-point, bidirectional protocol for you to build a messaging layer on top of. It handles the nitty gritty things like initialization, multiplexing, asynchronous operation, and packetization of your messages.
+
+The only additional components required are:
+
+* A reliable communication transport (TCP, pipes, RS-232, etc)
+* A message encoding format & marshaling scheme (for example [CBE](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md))
+* Endpoints to receive the messages.
 
 
 
