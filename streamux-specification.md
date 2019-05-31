@@ -64,10 +64,10 @@ The initialize message is a string of 40 bits, containing the following fields i
 | Quick Init Allowed      |   1  |  0  |   1 |
 | Min Length Bits         |   4  |  1  |  15 |
 | Max Length Bits         |   5  |  1  |  30 |
-| Recommended Length Bits |   5  |  1  |  31 |
+| Recommended Length Bits |   5  |  1  |  30 |
 | Min ID Bits             |   4  |  0  |  15 |
 | Max ID Bits             |   5  |  0  |  29 |
-| Recommended ID Bits     |   5  |  0  |  31 |
+| Recommended ID Bits     |   5  |  0  |  29 |
 
 #### Protocol Version
 
@@ -79,8 +79,11 @@ These fields are used to negotiate a [Quick Init](#quick-init).
 
 #### Length and ID Bits: Min, Max, Recommended
 
-These fields negotiate how many bits will be used for the length and ID fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to simplify processing and make a number of edge cases impossible. A peer must not set a `max` value to be smaller than its corresponding `min` value. Its `recommended` value must be within its own valid range `min` to `max` (unless it is the wildcard value `31`). Invalid values automatically cause negotiation to fail.
+These fields negotiate how many bits will be used for the length and ID fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to simplify processing and make a number of edge cases impossible. A peer must not set a `max` value to be smaller than its corresponding `min` value. Its `recommended` value must be within its own valid range `min` to `max` (unless it is the "wildcard" value `31`). Invalid values automatically cause negotiation to fail.
 
+#### Recommended Wildcard Value
+
+Recommended values may also be set to the "wildcard" value `31`, which defers to the other peer's recommended value.
 
 ### Negotiation Phase
 
@@ -108,7 +111,7 @@ Recommended (for `length` and `id`):
 
     recommended = minimum(us.recommended, them.recommended)
 
-Peers may also use the "wildcard" value (31) in their `recommended` fields, meaning that they offer no recommendation, and will defer to the other peer. This changes how `recommended` is calculated:
+Peers may also use the "wildcard" value `31` in their `recommended` fields, meaning that they offer no recommendation, and will defer to the other peer. This changes how `recommended` is calculated:
 
     if us.recommended = wildcard: recommended = them.recommended
     if them.recommended = wildcard: recommended = us.recommended
