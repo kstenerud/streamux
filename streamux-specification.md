@@ -62,12 +62,12 @@ The initialize message is a string of 40 bits, containing the following fields i
 | Unused (reserved)       |   2  |  0  |   0 |
 | Quick Init Request      |   1  |  0  |   1 |
 | Quick Init Allowed      |   1  |  0  |   1 |
-| Min Length Bits         |   4  |  1  |  15 |
-| Max Length Bits         |   5  |  1  |  30 |
-| Recommended Length Bits |   5  |  1  |  30 |
 | Min ID Bits             |   4  |  0  |  15 |
 | Max ID Bits             |   5  |  0  |  29 |
 | Recommended ID Bits     |   5  |  0  |  29 |
+| Min Length Bits         |   4  |  1  |  15 |
+| Max Length Bits         |   5  |  1  |  30 |
+| Recommended Length Bits |   5  |  1  |  30 |
 
 #### Protocol Version
 
@@ -77,9 +77,9 @@ The protocol version the peer expects to use. In this specification, it is proto
 
 These fields are used to negotiate a [Quick Init](#quick-init).
 
-#### Length and ID Bits: Min, Max, Recommended
+#### ID and Length Bits: Min, Max, Recommended
 
-These fields negotiate how many bits will be used for the length and ID fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to simplify processing and make a number of edge cases impossible. A peer must not set a `max` value to be smaller than its corresponding `min` value. Its `recommended` value must be within its own valid range `min` to `max` (unless it is the "wildcard" value `31`). Invalid values automatically cause negotiation to fail.
+These fields negotiate how many bits will be used for the ID and length fields in [message chunk headers](#message-header-encoding). Minimum values are capped at 15 to simplify processing and make a number of edge cases impossible. A peer must not set a `max` value to be smaller than its corresponding `min` value. Its `recommended` value must be within its own valid range `min` to `max` (unless it is the "wildcard" value `31`). Invalid values automatically cause negotiation to fail.
 
 #### Recommended Wildcard Value
 
@@ -95,19 +95,19 @@ If negotiation succeeds, the peers may begin sending normal messages. If negotia
 
 The peers must agree about the protocol version to use. If they do not, negotiation fails.
 
-#### Length and ID Bit Count
+#### ID and Length Bit Count
 
-This part of the negotiation determines how many bits will be used to represent the `length` field and `id` field in all [message chunk headers](#message-header-encoding) for this session.
+This part of the negotiation determines how many bits will be used to represent the `id` and `length` field field in all [message chunk headers](#message-header-encoding) for this session.
 
-Negotiation of the `length` and `id` fields uses the corresponding `min`, `max`, and `recommended` fields in the initialize message.
+Negotiation of the `id` and `length` fields uses the corresponding `min`, `max`, and `recommended` fields in the initialize message.
 
-Min, max (for `length` and `id`):
+Min, max (for `id` and `length`):
 
     min = maximum(us.min, them.min)
     max = minimum(us.max, them.max)
     if max < min: fail
 
-Recommended (for `length` and `id`):
+Recommended (for `id` and `length`):
 
     recommended = minimum(us.recommended, them.recommended)
 
@@ -117,13 +117,13 @@ Peers may also use the "wildcard" value `31` in their `recommended` fields, mean
     if them.recommended = wildcard: recommended = us.recommended
     if both us and them use wildcard: recommended = (max-min)/2 + min, rounding up
 
-Negotiated value (for `length` and `id`):
+Negotiated value (for `id` and `length`):
 
     negotiated value = minimum(maximum(recommended, min), max)
 
-After the initial length and ID bit width negotiations are completed, the total bits must be brought down to 30 if they happen to be over:
+After the initial ID and length bit width negotiations are completed, the total bits must be brought down to 30 if they happen to be over:
 
-    if length.negotiated + id.negotiated > 30:
+    if id.negotiated + length.negotiated > 30:
         if both are > 15: reduce both to 15
         else: (larger value) = 30 - (smaller value)
 
@@ -131,14 +131,14 @@ After the initial length and ID bit width negotiations are completed, the total 
 
 The choice of bit counts will affect the characteristics of the session. Depending on your use case and operating environment, certain aspects will be more important than others:
 
-* Small length bit count: Increases the marginal costs of the header, losing useful bandwidth to overhead.
-* Large length bit count: Increases the buffer size required to support the maximum message chunk length.
 * Small ID bit count: Limits the maximum number of simultaneous outstanding requests.
 * Large ID bit count: Requires more memory and complexity to keep track of outstanding requests.
+* Small length bit count: Increases the marginal costs of the header, losing useful bandwidth to overhead.
+* Large length bit count: Increases the buffer size required to support the maximum message chunk length.
 
 Note: An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0). A length bit count of 0 is invalid.
 
-The total number of bits negotiated (length bits + ID bits) will determine the [message chunk header](#message-header-encoding) size for the duration of the session:
+The total number of bits negotiated (ID bits + length bits) will determine the [message chunk header](#message-header-encoding) size for the duration of the session:
 
 | Total Bits Negotiated | Message Header Size |
 | --------------------- | ------------------- |
@@ -154,7 +154,7 @@ There may be times when the normal initialization message gating delay is unacce
 
 I will describe a "client" peer as a peer with `quick init request` set to true, and a "server" peer as a peer with `quick init allowed` set to true. A peer must not have both `quick init request` and `quick init allowed` set to true. A peer must not use wildcard values if its `quick init request` is set to true.
 
-On a successful quick init, the "server" peer disregards its own recommended values and chooses the "client" peer's recommended values instead (as if the server had used wildcard values for length and ID). This means that the "client" peer doesn't need to wait for the "server" peer's initialization message to arrive before it can start sending normal messages, because it can precompute the parameters that will be negotiated (assuming negotiation succeeds).
+On a successful quick init, the "server" peer disregards its own recommended values and chooses the "client" peer's recommended values instead (as if the server had used wildcard values for ID and length). This means that the "client" peer doesn't need to wait for the "server" peer's initialization message to arrive before it can start sending normal messages, because it can precompute the parameters that will be negotiated (assuming negotiation succeeds).
 
 A "client" peer requesting a quick init makes the following assumptions:
 
@@ -218,31 +218,31 @@ Upon receiving the "server" peer's initialize message, the "client" peer would r
 
 #### Case: All parameters are compatible
 
-| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |      6     |     20     |     14     |    6   |   12   |    8   |
-| Peer B |      5     |     15     |     15     |    6   |   15   |    7   |
-| Result |      6     |     15     |     14     |    6   |   12   |    7   |
+| Peer   | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |    6   |   12   |    8   |      6     |     20     |     14     |
+| Peer B |    6   |   15   |    7   |      5     |     15     |     15     |
+| Result |    6   |   12   |    7   |      6     |     15     |     14     |
 
 Negotiation: **Success**
 
 #### Case: Max ID < Min ID
 
-| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |      5     |     12     |     12     |    6   |    8   |    8   |
-| Peer B |      5     |     15     |     15     |   10   |   15   |   10   |
-| Result |      5     |     12     |     12     |   10   |    8   |    8   |
+| Peer   | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |    6   |    8   |    8   |      5     |     12     |     12     |
+| Peer B |   10   |   15   |   10   |      5     |     15     |     15     |
+| Result |   10   |    8   |    8   |      5     |     12     |     12     |
 
 Negotiation: **Fail**
 
 #### Case: Wildcard, initial negotiated values total > 30
 
-| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |      6     |     20     |     31     |    6   |   16   |   14   |
-| Peer B |     15     |     18     |     31     |    6   |   18   |   15   |
-| Result |     15     |     18     |     16     |    6   |   16   |   14   |
+| Peer   | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |    6   |   16   |   14   |      6     |     20     |     31     |
+| Peer B |    6   |   18   |   15   |     15     |     18     |     31     |
+| Result |    6   |   16   |   14   |     15     |     18     |     16     |
 
 In this case, both peer A and B used wildcard values for recommended length, resulting in (18-15)/2 + 15, rounded up, which is 17. The resulting values (length 17, id 14) are greater than 30, so the larger value is reduced (30 - 14 = 16).
 
@@ -250,11 +250,11 @@ Negotiation: **Success**
 
 #### Case: All recommended values use wildcard
 
-| Peer   | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |      6     |     20     |     31     |    6   |   16   |   31   |
-| Peer B |      8     |     15     |     31     |    6   |   18   |   31   |
-| Result |      8     |     15     |     12     |    6   |   16   |   11   |
+| Peer   | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |    6   |   16   |   31   |      6     |     20     |     31     |
+| Peer B |    6   |   18   |   31   |      8     |     15     |     31     |
+| Result |    6   |   16   |   11   |      8     |     15     |     12     |
 
 Length is (15-8)/2 + 8, rounded up = 12.
 
@@ -264,11 +264,11 @@ Negotiation: **Success**
 
 #### Case: Peer A requests quick init, and peer B allows quick init
 
-| Peer   | Quick Req | Quick Allow | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | --------- | ----------- | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |     1     |      0      |     10     |     18     |     14     |    8   |   15   |    8   |
-| Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
-| Result |     -     |      -      |     10     |     15     |     14     |    8   |   15   |    8   |
+| Peer   | Quick Req | Quick Allow | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | --------- | ----------- | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |     1     |      0      |    8   |   15   |    8   |     10     |     18     |     14     |
+| Peer B |     0     |      1      |    6   |   18   |   10   |      8     |     15     |     10     |
+| Result |     -     |      -      |    8   |   15   |    8   |     10     |     15     |     14     |
 
 Since we are using quick init, Peer A's recommended values are chosen, and Peer B's recommended values are ignored (as if they were wildcard values).
 
@@ -276,11 +276,11 @@ Negotiation: **Success**
 
 #### Case: Peer A requests quick init using values peer B doesn't support
 
-| Peer   | Quick Req | Quick Allow | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | --------- | ----------- | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |     1     |      0      |     10     |     18     |     16     |    8   |   15   |    8   |
-| Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
-| Result |     -     |      -      |     10     |     18     |    fail    |    8   |   15   |    8   |
+| Peer   | Quick Req | Quick Allow | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | --------- | ----------- | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |     1     |      0      |    8   |   15   |    8   |     10     |     18     |     16     |
+| Peer B |     0     |      1      |    6   |   18   |   10   |      8     |     15     |     10     |
+| Result |     -     |      -      |    8   |   15   |    8   |     10     |     18     |    fail    |
 
 Peer A's recommendeded length (16) is higher than peer B's max (15).
 
@@ -288,11 +288,11 @@ Negotiation: **Fail**
 
 #### Case: Peer B allows quick init, but peer A doesn't request quick init
 
-| Peer   | Quick Req | Quick Allow | Length Min | Length Max | Length Rec | ID Min | ID Max | ID Rec |
-| ------ | --------- | ----------- | ---------- | ---------- | ---------- | ------ | ------ | ------ |
-| Peer A |     0     |      0      |     10     |     18     |     14     |    8   |   15   |    8   |
-| Peer B |     0     |      1      |      8     |     15     |     10     |    6   |   18   |   10   |
-| Result |     -     |      -      |     10     |     15     |     10     |    8   |   15   |    8   |
+| Peer   | Quick Req | Quick Allow | ID Min | ID Max | ID Rec | Length Min | Length Max | Length Rec |
+| ------ | --------- | ----------- | ------ | ------ | ------ | ---------- | ---------- | ---------- |
+| Peer A |     0     |      0      |    8   |   15   |    8   |     10     |     18     |     14     |
+| Peer B |     0     |      1      |    6   |   18   |   10   |      8     |     15     |     10     |
+| Result |     -     |      -      |    8   |   15   |    8   |     10     |     15     |     10     |
 
 Since quick init wasn't requested, Peer B's `quick allow` has no effect, and negotiation follows the normal flow.
 
@@ -322,25 +322,25 @@ The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned 
 |      15      |      22      |     24      |
 |      23      |      30      |     32      |
 
-The header fields contain information about what kind of message this is. The length and request ID fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
+The header fields contain information about what kind of message this is. The request ID and length fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
 
 | Field       | Bits      | Order     |
 | ----------- | --------- | --------- |
 | Unused      |  variable | High Bit  |
-| Length      |  variable |           |
 | Request ID  |  variable |           |
+| Length      |  variable |           |
 | Response    |         1 |           |
 | Termination |         1 | Low Bit   |
 
-For example, a 14/10 header (14-bit length, 10-bit ID, which would result in a 32-bit header with 6 bits unused) would be conceptually viewed as:
+For example, a 10/14 header (10-bit ID, 14-bit length, which would result in a 32-bit header with 6 bits unused) would be conceptually viewed as:
 
-    000000lllllllllllllliiiiiiiiiirt
+    000000iiiiiiiiiillllllllllllllrt
 
-A 9/5 header (9-bit length, 5-bit ID, which would result in a 16-bit header) would be conceptually viewed as:
+A 5/9 header (5-bit ID, 9-bit length, which would result in a 16-bit header) would be conceptually viewed as:
 
-    llllllllliiiiirt
+    iiiiilllllllllrt
 
-A 6/0 header (6-bit length, 0-bit ID, which would result in an 8-bit header) would be conceptually viewed as:
+A 0/6 header (0-bit ID, 6-bit length, which would result in an 8-bit header) would be conceptually viewed as:
 
     llllllrt
 
