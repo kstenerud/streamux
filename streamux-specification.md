@@ -539,6 +539,14 @@ Message chunks with the same ID must be sent in-order (chunk 5 of message 42 mus
 Your choice of message chunk sizing and scheduling will depend on your use case.
 
 
+### Message Flight
+
+While a peer is awaiting a response from the other peer, the ID of that message is considered "in-flight", and cannot be re-used in other messages until the cycle is complete. However, not all requests require a response. If a particular request doesn't require a response, it may be returned to the ID pool immediately.
+
+Peers must agree on which requests require (or don't require) a response in your protocol.
+
+Note: If a request does not require a reply, it cannot be [canceled](#cancel-message). Choose carefully which message types will require no reply in your protocol.
+
 
 ### Message Encoding
 
@@ -556,13 +564,13 @@ The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned 
 
 The header fields contain information about what kind of message this is. The request ID and length fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
 
-| Field       | Bits      | Order     |
-| ----------- | --------- | --------- |
-| Unused      |  variable | High Bit  |
-| Request ID  |  variable |           |
-| Length      |  variable |           |
-| Response    |         1 |           |
-| Termination |         1 | Low Bit   |
+| Field       | Bits                          | Order     |
+| ----------- | ----------------------------- | --------- |
+| Unused      | determined during negotiation | High Bit  |
+| Request ID  | determined during negotiation |           |
+| Length      | determined during negotiation |           |
+| Response    | 1                             |           |
+| Termination | 1                             | Low Bit   |
 
 The header size is determined by the bit widths of the [ID cap](#field-_id_cap) and [length Cap](#field-_length_cap) values decided in the negotiation phase.
 
@@ -628,59 +636,112 @@ An `empty response` is a response message (with the response bit set to `1`) con
 Out of Band Messages
 --------------------
 
-Out of band (OOB) messages are used for management of the protocol and session itself rather than for communication with the application (although they may affect the application's behavior). Normally, OOB messages are sent at a higher priority than all other messages.
+Out of band (OOB) messages are used for management of the protocol and session itself rather than for communication with the application (although they may affect the application's behavior). The system must be capable of sending OOB messages at a higher priority than any normal message, athough not all OOB messages will require such a high priority.
+
+Like in normal messages, not all OOB messages require a response, in which case their ID may be recycled immediately.
 
 
 ### OOB Message Encoding
 
-An OOB message looks almost identical to a regular message chunk, except that it will have a length of 0 and a termination bit of 0. Because the length field is 0, a secondary 16-bit payload length field is appended to the message chunk header, giving a maximum OOB payload size of 65535. The rest of the message looks and behaves the same as a regular message.
+An OOB message looks almost identical to a regular message chunk, except that it will have a length of 0 and a termination bit of 0. Because the length field is 0, a secondary 16-bit payload length field is present, giving a maximum OOB payload size of 65535. The rest of the message looks and behaves the same as a regular message.
 
-| Field          | Type         | Size                                |
-| -------------- | ------------ | ----------------------------------- |
-| Chunk Header   | unsigned int | 1-4 (determined during negotiation) |
-| Fixed Data     | bytes        | determined during negotiation       |
-| Payload Length | unsigned int | 2                                   |
-| Payload        | bytes        | variable                            |
-| Padding        | bytes        | determined during negotiation       |
+| Field              | Type         | Size                                |
+| ------------------ | ------------ | ----------------------------------- |
+| Chunk Header       | unsigned int | 1-4 (determined during negotiation) |
+| Fixed Data         | bytes        | determined during negotiation       |
+| OOB Payload Length | unsigned int | 2                                   |
+| OOB Payload        | bytes        | variable                            |
+| Padding            | bytes        | determined during negotiation       |
 
-TODO
+Like in the negotiation message, the OOB message payload is encoded using [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md), as an inlined map (containing only the key-value pairs, not the "begin map" or "end container" markers). The number and type of fields in the payload are up to your protocol design. Only the `_oob` field is required in every message.
 
-The payload is encoded in CBE v1, as an inlined map (containing only the key-value pairs, not the "begin map" or "end container" markers). The map must always contain the type of the OOB message for OOB requests (not present in OOB responses), keyed to the empty string ("").
+#### Field `_oob`
 
-OOB messages may contain extra "filler" data (stored under the key "_") to aid in thwarting traffic analysis. Filler data is decoded and discarded by the receiver. Coordination of when and how to use filler data is beyond the scope of this document.
+The OOB field determines the type of OOB message this is. This is the only required field in an OOB message payload.
 
-An empty OOB response signals successful completion, with no other data to report.
+#### Field `_`
 
-OOB Messages:
-- `ping`: Requests a ping reply from the peer. The reply must be sent as soon as possible to aid in latency calculations.
-- `alert`: Informs the other peer of an important event (warnings, errors, etc)
-- `disconnect`: Informs the other peer that we are disconnecting from the session.
-- `stop`: Requests that the other peer stop sending normal messages (OOB messages may still be sent).
-- `start`: Informs the other peer that it may resume sending normal messages again.
-
-TODO: Other possible types:
-- renegotiate
-- restart session
-- save session => id?
-- rejoin session [id]?
-- list oob msg types?
+The optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to OOB messages. The receiving peer must discard this field if encountered.
 
 
+### OOB Message Types
 
-### Special OOB Message: Cancel
+The following OOB message types must be present in Streamux based protocols. You are free to add other message types as needed by your protocol.
 
-A cancel (and cancel ack) message is an OOB message that is encoded in a special way. While OOB messages normally allocate a new message ID, cancel re-uses the ID of the message it intends to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available message IDs are in flight).
+#### `ping` Message
 
-A cancel message can be identified by its payload length of 0. It won't have a message type encoded in the payload section.
+The ping message requests a ping response from the peer. The response must be sent as soon as possible to aid in latency calculations.
 
+Ping messages (and responses) must be sent at the highest priority.
+
+#### `alert` Message
+
+An alert message informs the other peer of an important events regarding the session (such as warnings, errors, etc). This message should not be used to transport application level events.
+
+An alert message does not have a response.
+
+##### Field `_message`
+
+A string containing the contents of the alert.
+
+##### Field `_severity`
+
+A string containing the severity of the alert:
+
+* `error`: Something in the session layer is malfunctioning, and the other peer may wish to end the session.
+* `warn`: Something may be incorrect or malfunctining in the session layer, but it may also be an edge case.
+* `info`: Information that the other peer should know about. Use this sparingly.
+* `debug`: Never use this in production.
+
+Alert message priority is up to the implementation. Error messages should normally be given the highest priority to avoid potential data loss.
+
+#### `disconnect` Message
+
+The disconnect message informs the other peer that we are ending the session and disconnecting. No furter messages may be sent after a disconnect message.
+
+A disconnect message must be sent at the highest priority.
+
+A disconnect message does not have a response.
+
+#### `stop` Message
+
+The stop message requests that the other peer stop sending normal messages. It may still send OOB messages.
+
+A stop message must be sent at the highest priority.
+
+A stop message does not have a response.
+
+#### `start` Message
+
+The start message informs the other peer that it may begin sending normal messages again.
+
+A start message must be sent at the highest priority.
+
+A start message does not have a response.
+
+#### Cancel Message
+
+The cancel message requests that the other peer cancel an operation.
+
+Cancel request and response messages are encoded in a special way: While OOB messages normally allocate a new message ID, the cancel message re-uses the ID of the request it intends to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available message IDs are in flight). Its OOB payload length is always 0, and it has no OOB payload contents.
+
+| Field              | Type         | Size                                | Value |
+| ------------------ | ------------ | ----------------------------------- | ----- |
+| Chunk Header       | unsigned int | 1-4 (determined during negotiation) |   *   |
+| Fixed Data         | bytes        | determined during negotiation       |   *   |
+| OOB Payload Length | unsigned int | 2                                   |   0   |
+
+Cancel requests and responses must be sent at the highest priority.
 
 
 Request Cancellation
 --------------------
 
-There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long. A requesting peer may cancel an outstanding request by sending a `cancel` message, citing the request ID of the request to be canceled.
+There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long, or the ID pool may be exhausted. A requesting peer may cancel an outstanding request by sending a cancel message, citing the request ID of the request to be canceled.
 
-Once a `cancel` request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used, and all response chunks to that request ID must be discarded. Once a `cancel ack` is received, the request ID is unlocked and may be used again.
+Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operation the original request with that ID triggered, and send a cancel response at the highest priority.
+
+Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used in request messages, and all response chunks to that request ID must be discarded. Once a cancel response is received for that ID, it is unlocked and may be used again.
 
 #### Example:
 
