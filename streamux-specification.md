@@ -148,6 +148,8 @@ Each peer sends this message once and only once as their first message in order 
 
 These messages are exchanged only during the negotiation phase of the session. Once the session parameters have been successfully negotiated, negotiation messages are no longer sent.
 
+Note: Triggering a new negotiation phase after normal messaging has begun is not expressly forbidden, as some protocols may require this. Details of such an operation would be protocol-specific, although this would best be done via OOB messages.
+
 ### Normal Messages
 
 These messages are sent over the course of the session after negotiation has completed. Normal messages contain your application data.
@@ -279,12 +281,12 @@ This message must match exactly between peers, otherwise it is a [hard failure](
 
 The negotiation message facilitates negotiation of any parameters the peers must agree upon in order to communicate successfully.
 
-| Field          | Type         | Octets | Value   | Notes                          |
-| -------------- | ------------ | ------ | ------- | ------------------------------ |
-| Fixed Data     | bytes        |    *   | *       | Determined through negotiation |
-| Payload Length | unsigned int |    2   | 0-65535 |                                |
-| Payload        | bytes        |    *   | *       |                                |
-| Padding        | bytes        |    *   | *       | Determined through negotiation |
+| Field          | Type         | Octets | Notes                          |
+| -------------- | ------------ | ------ | ------------------------------ |
+| Fixed Data     | bytes        |    *   | Determined through negotiation |
+| Payload Length | unsigned int |    4   |                                |
+| Payload        | bytes        |    *   |                                |
+| Padding        | bytes        |    *   | Determined through negotiation |
 
 #### Fixed Data
 
@@ -296,7 +298,7 @@ The payload length refers to the length of the payload field only (it doesn't in
 
 #### Payload
 
-The payload field contains sub-fields with message-specific information (if any). If encryption is used, this field (and any padding) must be encrypted as soon as it is possible to do so (after negotiating encryption parameters).
+The payload field contains sub-fields with message-specific information (if any). If encryption is used, this field (and any padding) should be encrypted as soon as it is possible to do so (after negotiating encryption parameters).
 
 #### Padding
 
@@ -707,7 +709,7 @@ The contents of the fixed data portion of the message are completely free-form, 
 
 The payload portion of the message contains the actual message data to pass to the next layer up. Its contents are application-specific, and its length is determined by the length field in the chunk header.
 
-, as well as the padding amount determined during the [negotiation phase](#negotiation-phase). The length field refers only to the number of used octets in the payload field, even though the field contents may be inflated to a multiple of the padding amount (if padding amount is greater than 0).
+Note: If encryption is used, applications are encouraged to structure messages to support filler data as a means to help thwart traffic analysis.
 
 
 #### Padding Field
@@ -750,7 +752,7 @@ The OOB field determines the type of OOB message this is. This is the only requi
 
 #### Field `_`
 
-The optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to OOB messages. The receiving peer must discard this field if encountered.
+The optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to OOB messages if encryption is used. The receiving peer must discard this field if encountered.
 
 
 ### OOB Message Types
