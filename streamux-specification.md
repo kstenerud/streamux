@@ -18,6 +18,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 
 * [Use Case](#use-case)
 * [General Operation](#general-operation)
+* [Messages](#messages)
 * [Negotiation Phase](#negotiation-phase)
     * [Negotiation Modes](#negotiation-modes)
         * [Simple](#simple)
@@ -27,16 +28,17 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
     * [Negotiation Message Layout](#negotiation-message-layout)
     * [Payload Fields](#payload-fields)
     * [Mandatory Payload Fields](#mandatory-payload-fields)
-        * [Field `_n_mode`](#field-_n_mode)
+        * [Field `_mode`](#field-_mode)
         * [Field `_protocol`](#field-_protocol)
         * [Field `_id_cap`](#field-_id_cap)
         * [Field `_length_cap`](#field-_length_cap)
         * [ID and Length Cap Total Bit Count](#id_and_length_cap_total_bit_count)
     * [Optional Payload Fields](#optional-payload-fields)
-        * [Field `_n_allowed`](#field-_n_allowed)
+        * [Field `_allowed_modes`](#field-_allowed_modes)
         * [Field `_fixed_length`](#field-_fixed_length)
         * [Field `_padding`](#field-_padding)
         * [Field `_negotiation`](#field-_negotiation)
+        * [Field `_`](#field-_)
     * [Negotiation Examples](#negotiation-examples)
 * [Messaging Phase](#messaging-phase)
     * [Message Encoding](#message-encoding)
@@ -50,9 +52,13 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
     * [Empty Response](#empty-response)
 * [Out Of Band Messages](#out-of-band-messages)
     * [OOB Message Encoding](#oob-message-encoding)
+        * [Field `_oob`](#field-_oob)
+        * [Field `_`](#field-_)
     * [OOB Message Types](#oob-message-types)
         * [Ping Message](#ping-message)
         * [Alert Message](#alert-message)
+            * [Field `_message`](#field-_message)
+            * [Field `_severity`](#field-_severity)
         * [Disconnect Message](#disconnect-message)
         * [Stop Message](#stop-message)
         * [Start Message](#start-message)
@@ -65,7 +71,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 Use Case
 --------
 
-Streamux is designed as a point-to-point, bidirectional protocol foundation for you to build a messaging layer on top of. It handles everything between the marshaler and the send/receive channel.
+Streamux is designed as a point-to-point, bidirectional protocol foundation for you to build a messaging layer on top of. It handles the middle parts which tend to operate in a similar way in most stream oriented protocols. Think of it as a protocol construction kit.
 
 ```
 +-------------------------------------+
@@ -84,21 +90,23 @@ Streamux is designed as a point-to-point, bidirectional protocol foundation for 
                    |    standard      |  |
                    |    negotiation   |  |
 +------------------+                  |  |
-|              [Streamux]             |  |==> Provided by Streamux
-|                                     |  |
+|              [Streamux]             |  |
+|                                     |  |==> Provided by Streamux
 |          session management         |  |
+|    request tracking & cancellation  |  |
 |             packetization           |  |
+|          encryption support         |  |
 |             multiplexing            |  |
 +-------------------------------------+ /
 
++-------------------------------------+
+|          ciphers (optional)         |
 +-------------------------------------+
 | priority queues  |                  |
 +------------------+ receive channel  |
 | send channel     |                  |
 +-------------------------------------+
 |         reliable transport          |
-+-------------------------------------+
-|        communications medium        |
 +-------------------------------------+
 ```
 
@@ -107,19 +115,46 @@ Streamux is designed as a point-to-point, bidirectional protocol foundation for 
 General Operation
 -----------------
 
+There are two main phases to a Streamux session: the negotiation phase and the messaging phase. During the negotiation phase, session parameters are agreed upon. Once this phase completes, the normal messaging phase begins.
+
 Upon establishing a connection, each peer sends negotiation message(s), and then begins normal communications. Communication is asynchronous after negotiation completes. A typical session might look something like this:
 
 | Peer X        | Peer Y        |
 | ------------- | ------------- |
-| Begin Session | Begin Session |
+|               | Identifier    |
 |               | Negotiate     |
+| Identifier    |               |
 | Negotiate     |               |
 | Request A     |               |
 | Request B     | Response A    |
 |               | Request C     |
 | Response C    | Response B    |
 | ...           | ...           |
-| End Session   | End Session   |
+| Disconnect    |               |
+| (end session) | (end session) |
+
+
+
+Messages
+--------
+
+Streamux is message oriented, and has four main kinds of messages:
+
+### Identifier Message
+
+Each peer sends this message once and only once as their first message in order to identify the negotiation protocol, followed immediately by the first negotiation message.
+
+### Negotiation Messages
+
+These messages are exchanged only during the negotiation phase of the session. Once the session parameters have been successfully negotiated, negotiation messages are no longer sent.
+
+### Normal Messages
+
+These messages are sent over the course of the session after negotiation has completed. Normal messages contain your application data.
+
+### Out of Band Messages
+
+These messages are also sent over the course of the normal messaging phase of the session, but are restricted to session management signaling. Error handling, flow control, operation cancellation, disconnects and such are handled via OOB messages.
 
 
 
@@ -136,18 +171,20 @@ There are three modes of negotiation supported. An implementation is not require
 
 #### Simple
 
-With simple negotiation, both peers are equal in every way. Each peer sends only one negotiation message, containing their proposed parameters for the session. Both peers follow the exact same negotiation algorithm, so there is no need for any further messages to complete negotiation. After one pair of messages, both peers will already know if negotiation has succeeded or failed.
+With simple negotiation, both peers are equal in every way. Each peer sends only one negotiation message, containing their proposed parameters for the session. Both peers follow the exact same negotiation algorithm, so there is no need for any further messages in order to complete the negotiation.
 
 [Soft failures](#hard-and-soft-failures) in simple mode are automatically upgraded to hard failures.
 
 | Time | Peer X                       | Dir  | Peer Y                                |
 | ---- | ---------------------------- | ---- | ------------------------------------- |
-| T1   | Negotiate: P: simple, A: ... | ===> |                                       |
+| T1   | Identifier                   | ===> |                                       |
+|      | Negotiate: P: simple, A: ... | ===> |                                       |
+|      |                              | <=== | Identifier                            |
 |      |                              | <=== | Negotiate: P: passive, A: simple, ... |
 | T2   | (negotiation complete)       |      | (negotiation complete)                |
 |      | Messages                     | <==> | Messages                              |
 
-At `T1`, each peer sends a negotiation message. Peer X proposes `simple`. Peer Y proposes `passive` and accepts at least `simple`. Note that this negotiation would also succeed if peer Y proposed `simple` mode (see [Proposed Negotiation Mode](#field-_n_mode))
+At `T1`, each peer sends an identifier and negotiation message. Peer X proposes `simple`. Peer Y proposes `passive` and accepts at least `simple`. Note that simple mode negotiation would also succeed if peer Y had proposed `simple` mode (see [Proposed Negotiation Mode](#field-_mode))
 
 At `T2`, each peer employs the "simple" negotiation algorithm and reaches the same conclusion (success or failure). There is therefore no need for any further negotiation messages.
 
@@ -162,16 +199,18 @@ The advantage of yield negotiation is that the proposing peer doesn't need to wa
 
 | Time | Peer "Initiator"            | Dir  | Peer "Yielding"                      |
 | ---- | --------------------------- | ---- | ------------------------------------ |
-| T1   | Negotiate: P: yield, A: ... | ===> |                                      |
+| T1   | Identifier                  | ===> |                                      |
+|      | Negotiate: P: yield, A: ... | ===> |                                      |
 |      | Request X                   | ===> |                                      |
+|      |                             | <=== | Identifier                           |
 |      |                             | <=== | Negotiate: P: passive, A: yield, ... |
 | T2   | (negotiation complete)      |      | (negotiation complete)               |
 |      |                             | <=== | Response X                           |
 |      | Messages                    | <==> | Messages                             |
 
-At `T1`, the initiator peer proposes `yield`, and its accept list is ignored. The yielding peer proposes `passive`, and accepts at least `yield`. The initiator peer doesn't wait, and sends a request immediately, before either side has had a chance to receive or evaluate the others negotiate message.
+At `T1`, the initiator peer proposes `yield`, and its accept list is ignored. The yielding peer proposes `passive`, and accepts at least `yield`. The initiator peer doesn't wait, and sends a request immediately, before either peer has had a chance to receive or evaluate the other's negotiate message.
 
-At `T2`, both peers have received each others negotiation message, and have run the identical negotiation algorithm to determine the result. If negotiation succeeds, the yielding peer will process the propsing peer's request as normal. If negotiation fails, the request will neither be acted upon nor responded to because this is a [hard failure](#hard-and-soft-failures)
+At `T2`, both peers have received each other's negotiation message, and have run the identical negotiation algorithm to determine the result. If negotiation succeeds, the yielding peer will process the propsing peer's already sent request as normal. If negotiation fails, the request will neither be acted upon nor responded to because this is a [hard failure](#hard-and-soft-failures)
 
 
 #### Handshake
@@ -180,11 +219,15 @@ With handshake negotiation, each peer sends negotiation messages in turn until a
 
 The contents of these negotiation messages depends on the needs of your protocol. The only requirement is that [certain information be present in the first negotiation message](#mandatory-payload-fields).
 
-Handshake negotiation is most useful when incorporating encryption into your protocol.
+Handshake negotiation is only considered complete when one of the peers includes the [negotiation field](#field-_negotiation) in a neogtiation message. What leads to this is entirely up to your protocol.
+
+Handshake negotiation is particularly useful when incorporating encryption into your protocol.
 
 | Time | Peer "Initiator"                | Dir  | Peer "Accepting"                         |
 | ---- | ------------------------------- | ---- | ---------------------------------------- |
-| T1   | Negotiate: P: handshake, A: ... | ===> |                                          |
+| T1   | Identifier                      | ===> |                                          |
+|      | Negotiate: P: handshake, A: ... | ===> |                                          |
+|      |                                 | <=== | Identifier                               |
 |      |                                 | <=== | Negotiate: P: passive, A: handshake, ... |
 | T2   |                                 | <=== | Negotiate: Handshake params              |
 | T3   | Negotiate: Handshake params     | ===> |                                          |
@@ -199,69 +242,87 @@ At `T1`, the initiator peer proposes `handshake`, and its accept list is ignored
 
 At `T2`, the peers have successfully negotiated to use `handshake` mode. The accepting peer sends a "corrected" first negotiation message, containing a response to the initiator peer's handshake parameters.
 
-At `T3`, the initiator peer evaluates the accepting peer's handshake message, and responds with another handshake message. This continues back and forth until one peer notifies the other that negotiation is complete (at `Tn`).
+At `T3`, the initiator peer evaluates the accepting peer's handshake message, and responds with another handshake message. This continues back and forth until one peer notifies the other that negotiation is complete using the [negotiation field](#field-_negotiation) (at `Tn`).
 
 
 ### Hard and Soft Failures
 
-Some negotiation failures aren't necessarily terminal. Depending on your protocol design, certain kinds of failures can be recovered from.
+Some negotiation failures aren't necessarily fatal. Depending on your protocol design, certain kinds of failures can be recovered from.
 
-A soft failure means that a particular negotiation attempt failed, but, if the negotiation mode or protocol allows it, the peers may make another attempt, or choose an alternative.
+A `soft failure` means that a particular negotiation attempt failed, but, if the negotiation mode or protocol allows it, the peers may make another attempt, or choose an alternative.
 
-A hard failure is considered unrecovarable, regardless of the negotiation mode. After a hard failure, the session is dead, and the peers should disconnect.
+A `hard failure` is considered unrecovarable, regardless of the negotiation mode. After a hard failure, the session is dead, and the peers should disconnect.
 
-Note: In simple and yield modes, all failures are hard failures.
+Note: Since `simple` and `yield` negotiation modes don't allow sending more than one negotiation message, all failures are hard failures in these modes.
 
 
-### Negotiation Message Layout
+### Identifier Message Layout
 
-Negotiation consists of the exchange of negotiation messages between peers. A negotiation message begins with an 8-byte identifier, followed by negotiation-specific data:
+The 8-byte identifier message serves to identify the base protocol that will be used for negotiation.
 
 | Field          | Type         | Octets | Value   |
 | -------------- | ------------ | ------ | ------- |
 | Initiator      | bytes        |    2   | "pN"    |
 | Identifier     | bytes        |    5   | "STRMX" |
 | Version        | unsigned int |    1   | 1       |
+
+The initiator field is always the 2-byte UTF-8 sequence `pN`
+
+The 5-byte identifier `STRMX` identifies this as a Streamux negotiation message.
+
+The Streamux version is currently 1.
+
+This message must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
+
+
+### Negotiation Message Layout
+
+The negotiation message facilitates negotiation of any parameters the peers must agree upon in order to communicate successfully.
+
+| Field          | Type         | Octets | Value   |
+| -------------- | ------------ | ------ | ------- |
 | Fixed Data     | bytes        |    *   | *       |
 | Payload Length | unsigned int |    2   | 0-65535 |
 | Payload        | bytes        |    *   | *       |
 | Padding        | bytes        |    *   | *       |
 
-The protocol negotiation initiator value "pN" was chosen because it is unlikely to occur naturally in text, and is unlikely to trigger commands when overlaid on another protocol.
+#### Fixed Data
 
-The 5-byte identifier "STRMX" identifies this as a Streamux negotiation message.
+The fixed data field has a length of 0 until otherwise negotiated. Once [fixed data length](#field-_fixed_length) has been successfully negotiated to a value greater than 0, all future negotiation messages will contain a fixed data portion of the selected length.
 
-The Streamux version is currently 1.
+#### Payload Length
 
-The initiator, identifier, and version must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
+The payload length refers to the length of the payload field only (it doesn't include the length of the payload length field or the padding).
 
-The payload is encoded using [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md), as an inlined map (containing only the key-value pairs, not the "begin map" or "end container" markers). Its contents may be encrypted at some point during the negotiation phase if encryption is used.
+#### Payload
 
-Fixed data has length 0 until otherwise negotiated. Once the [fixed data length](#field-_fixed_length) has been successfully negotiated to a value greater than 0, all future negotiation messages will contain a fixed data portion of the selected length.
+The payload field contains sub-fields with message-specific information (if any). Its contents may be encrypted at some point during the negotiation phase if encryption is used.
 
-Padding is 0 until otherwise negotiated. Once [padding](#field-_padding) has been successfully negotiated to a value greater than 0, all future negotiation messages will be padded to the next multiple of this value.
+#### Padding
+
+Padding is 0 until otherwise negotiated. Once [padding](#field-_padding) has been successfully negotiated to a value greater than 0, all future negotiation messages will have their payload contents padded to the next multiple of this value (padding does not affect the payload length field).
 
 
-### Payload Fields
+### Payload Sub-Fields
 
-The payload section is an inlined map, containing key-value pairs. Keys and values may be anything supported by [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md).
+The payload is composed of sub-fields, encoded using [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md), as an inlined map (containing only the key-value pairs, not the "begin map" or "end container" markers). Fields are recorded as key-value pairs in this map.
 
-All string fields beginning with an underscore `_` are reserved for use by Streamux.
+Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
 
 ### Mandatory Payload Fields
 
-The initial negotiation message must contain at least the following fields. For handshake mode, further negotiation messages may be sent according to your handshake protocol design, and do not need to contain these fields.
+The first negotiation message sent by each peer must contain at least the following fields. For handshake mode, further negotiation messages may be sent according to your handshake protocol design, and do not need to contain these fields.
 
 | Field         | Type   | Description                    |
 | ------------- | ------ | ------------------------------ |
-| `_n_mode`     | string | Negotiation mode               |
+| `_mode`       | string | Negotiation mode               |
 | `_protocol`   | map    | Overlaid protocol              |
 | `_id_cap`     | map    | Maximum allowable ID value     |
 | `_length_cap` | map    | Maximum allowable length value |
 
 
-#### Field `_n_mode`
+#### Field `_mode`
 
 The proposed negotiation mode must be one of:
 - `passive`
@@ -269,14 +330,14 @@ The proposed negotiation mode must be one of:
 - `yield`
 - `handshake`
 
-When a peer proposes `passive`, it is indicating that it will accept whatever negotiation mode the other peer proposes, provided that the proposed mode is in this peer's [allowed negotiation modes](#field-_n_allowed).
+When a peer proposes `passive`, it is indicating that it will accept whatever negotiation mode the other peer proposes, provided that the other peer's proposed mode is in this peer's [allowed negotiation modes](#field-_allowed_modes).
 
 Rules:
 
-* When a peer proposes a negotiation mode other than `passive`, its own [allowed negotiation modes](#field-_n_allowed) list is ignored.
+* When a peer proposes a negotiation mode other than `passive`, its own [allowed negotiation modes](#field-_allowed_modes) list is ignored.
 * Only one peer may propose a non-passive mode. If both propose a non-passive mode, it is a [hard failure](#hard-and-soft-failures).
-* With the exception of `passive`, if the proposed mode doesn't exist in the other peer's [allowed negotiation modes](#field-_n_allowed), it is a [hard failure](#hard-and-soft-failures).
-* If both peers propose `passive` mode, then negotiation defaults to `simple`, provided simple mode is in both peers' [allowed negotiation modes](#field-_n_allowed). Otherwise it is a [hard failure](#hard-and-soft-failures).
+* With the exception of `passive`, if the proposed mode doesn't exist in the other peer's [allowed negotiation modes](#field-_allowed_modes), it is a [hard failure](#hard-and-soft-failures).
+* If both peers propose `passive` mode, then negotiation defaults to `simple`, provided simple mode is in both peers' [allowed negotiation modes](#field-_allowed_modes). Otherwise it is a [hard failure](#hard-and-soft-failures).
 * As a special case, if both peers propose `simple`, then simple mode is automatically and successfully chosen, disregarding all other rules.
 
 
@@ -293,20 +354,22 @@ The Protocol field contains the identifier and version of the proposed protocol 
 
 `ver` (Version) is a string following [Semantic Versioning 2.0.0](https://semver.org/). `MAJOR` version changes indicate a backwards incompatible change, and so only the `MAJOR` portion is considered when deciding compatibility between peers. `MINOR` and `PATCH` information are only used for diagnostic and debugging purposes.
 
-ID and the `MAJOR` portion of the version must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
+The ID and the `MAJOR` portion of the version must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
 
 
 #### Field `_id_cap`
 
-The ID Cap field negotiates the maximum allowed ID value in messages during this session.
+The ID Cap field negotiates the maximum allowed ID value in messages (implying the maximum number of messages that may be in-flight at a time) during this session.
 
-| Field      | Type        | Valid Range   |
-| ---------- | ----------- | ------------- |
-| `min`      | signed int  | 0 - 32767     |
-| `max`      | signed int  | 0 - 536870911 |
-| `proposed` | signed int  | 0 - 536870911 |
+| Field      | Type        | Valid Range          |
+| ---------- | ----------- | -------------------- |
+| `min`      | signed int  | 0 - 32767            |
+| `max`      | signed int  | 0 - 536870911        |
+| `proposed` | signed int  | 0 - 536870911, or -1 |
 
-The `min`, `max`, and `proposed` fields from the two peers ("us" and "them") are used to generate a negotiated value. The algorithm is as follows:
+Note: An ID cap of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0).
+
+The `min`, `max`, and `proposed` sub-fields from the two peers ("us" and "them") are used to generate a negotiated value. The algorithm is as follows:
 
 ##### Min, max:
 
@@ -333,20 +396,20 @@ Peers may also use the "wildcard" value `-1` in the `proposed` field, meaning th
 
 #### Field `_length_cap`
 
-The Length Cap field negotiates the maximum allowed length of message payloads during this session.
+The Length Cap field negotiates the maximum allowed length of message payloads during this session. This affects only the length of the payload (padding is not included in the payload length calculation).
 
-| Field      | Type       | Valid Range    |
-| ---------- | ---------- | -------------- |
-| `min`      | signed int | 1 - 32767      |
-| `max`      | signed int | 1 - 1073741823 |
-| `proposed` | signed int | 1 - 1073741823 |
+| Field      | Type       | Valid Range           |
+| ---------- | ---------- | --------------------- |
+| `min`      | signed int | 1 - 32767             |
+| `max`      | signed int | 1 - 1073741823        |
+| `proposed` | signed int | 1 - 1073741823, or -1 |
 
 Length Cap follows the same negotiation algorithm as [ID cap](#field-_id_cap).
 
 
 #### ID and Length Cap Total Bit Count
 
-The larger the ID and length caps, the more bits are required to represent those value ranges in [message chunk headers](#chunk-header), and the larger the header will be during the current session.
+The larger the ID and length caps, the more bits will be required to represent those value ranges in [message chunk headers](#chunk-header), and the larger the header will be for the current session.
 
 The total of (id bits + length bits) must not exceed 30. If they do, they must be brought down to 30 using the following algorithm:
 
@@ -356,34 +419,31 @@ The total of (id bits + length bits) must not exceed 30. If they do, they must b
 
 If a cap field's bit count is reduced, its new value will be the maximum value encodable in that number of bits.
 
-Note: If the final negotiated cap values are not within the min and max values of BOTH peers, negotiation fails.
-
-##### Considerations
+Note: If the final negotiated cap values are not within the min and max values of BOTH peers, it is a [hard failure](#hard-and-soft-failures).
 
 The choice of ID and length ranges will affect the characteristics of the session. Depending on your use case and operating environment, certain aspects will be more important than others:
 
-* Small ID range: Limits the maximum number of simultaneous outstanding requests.
+* Small ID range: Limits the maximum number of simultaneous outstanding (in-flight) requests.
 * Large ID range: Requires more memory and complexity to keep track of outstanding requests.
 * Small length range: Increases the marginal costs of the header, losing useful bandwidth to overhead.
 * Large length range: Increases the buffer size required to support the maximum message chunk length.
-
-Note: An ID bit count of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0).
 
 
 
 ### Optional Payload Fields
 
-There are other points of negotiation that are not absolutely required for successful communication, but may become necessary depending on the negotiation mode and the protocol you overlay:
+There are other fields that are not always required for successful negotiation, but may be necessary depending on the negotiation mode and your protocol design:
 
-| Field           | Type    |
-| --------------- | ------- |
-| `_n_allowed`    | list    |
-| `_fixed_length` | map     |
-| `_padding`      | map     |
-| `_negotiation`  | boolean |
+| Field            | Type    |
+| ---------------- | ------- |
+| `_allowed_modes` | list    |
+| `_fixed_length`  | map     |
+| `_padding`       | map     |
+| `_negotiation`   | boolean |
+| `_`              | any     |
 
 
-#### Field `_n_allowed`
+#### Field `_allowed_modes`
 
 This field is a whitelist of negotiation modes that this peer supports. It may include any combination of:
 - `simple`
@@ -392,12 +452,12 @@ This field is a whitelist of negotiation modes that this peer supports. It may i
 
 If this field is not present, [`simple`] is assumed.
 
-Negotiation can only succeed if the other peer's [`_n_mode` field](#field-_n_mode) (other than `passive`) is present in this peer's `_n_allowed` list. If not, it is a [hard failure](#hard-and-soft-failures).
+Negotiation can only succeed if the other peer's [`_mode` field](#field-_mode) (other than `passive`) is present in this peer's `_allowed_modes` list. If not, it is a [hard failure](#hard-and-soft-failures).
 
 
 #### Field `_fixed_length`
 
-This field negotiates the length of the fixed-length portion in messages. It's primarily of use in supporting encryption channel or authentication data, for example a [message authentication code](https://en.wikipedia.org/wiki/Message_authentication_code).
+This field negotiates the length of the fixed-length portion in both normal and negotiation messages. It's primarily of use in supporting encryption channel or authentication data, for example a [message authentication code](https://en.wikipedia.org/wiki/Message_authentication_code).
 
 | Field      | Type         | Valid Range |
 | ---------- | ------------ | ----------- |
@@ -410,13 +470,15 @@ This field negotiates the length of the fixed-length portion in messages. It's p
 
 The negotiation process chooses the higher of the two peer's `proposed` values. If the chosen value is greater than either of the peer's `max` values, this is a [soft failure](#hard-and-soft-failures).
 
+To defer to the other peer, simply choose `0` for proposed, and nonzero for `max`.
+
 * If this field is not present, `0` is assumed for both values.
 * If `max` is not present, it is assumed to be equal to `proposed`.
 
 
 #### Field `_padding`
 
-This field negotiates how much padding will be applied to message payloads. It's primarily of use in supporting [block ciphers](https://en.wikipedia.org/wiki/Block_cipher).
+This field negotiates how much padding will be applied to both normal and negotiation message payloads. It's primarily of use in supporting [block ciphers](https://en.wikipedia.org/wiki/Block_cipher).
 
 
 | Field      | Type         | Valid Range |
@@ -430,15 +492,24 @@ This field negotiates how much padding will be applied to message payloads. It's
 
 The negotiation process chooses the higher of the two peer's `proposed` values. If the chosen value is greater than either of the peer's `max` values, this is a [soft failure](#hard-and-soft-failures).
 
+To defer to the other peer, simply choose `0` for proposed, and nonzero for `max`.
+
 * If this field is not present, `0` is assumed for both values.
 * If `max` is not present, then it is assumed to be equal to `proposed`.
 
 
 #### Field `_negotiation`
 
-This field signals to the other peer that negotiation is complete. A value of `true` indicates success, and a value of `false` indicates a [hard failure](#hard-and-soft-failures).
+The presence of this field signals to the other peer that negotiation is complete. A boolean value of `true` indicates success, and a value of `false` indicates a [hard failure](#hard-and-soft-failures).
 
-This field may only be used at the conclusion of a `handshake` negotiation.
+This field is ignored in `simple` and `yield` modes, because success or failure is implied from the first (and only) message exchange.
+
+This field is required in the final message of a `handshake` negotiation. If the receiving peer disagrees with the sending peer's assessment of the negotiation, it is a [hard failure](#hard-and-soft-failures).
+
+
+#### Field `_`
+
+The optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to negotiation messages if encryption is used. The receiving peer must discard this field if encountered.
 
 
 
@@ -448,9 +519,11 @@ This field may only be used at the conclusion of a `handshake` negotiation.
 
 | Peer   | Proposed | Allowed | ID Min | ID Max | ID Prop | Length Min | Length Max | Length Prop |
 | ------ | -------- | ------- | ------ | ------ | ------- | ---------- | ---------- | ----------- |
-| Peer A |  Simple  |    -    |    6   |   12   |     8   |     100    |  1000000   |    100000   |
-| Peer B |    -     | Simple  |    6   |   15   |     7   |      50    |   300000   |    300000   |
-| Result |    -     |    -    |    6   |   12   |     7   |     100    |   300000   |    100000   |
+| Peer A |  Simple  |    -    |   100  |  1000  |  1000   |     100    |  1000000   |    100000   |
+| Peer B |    -     | Simple  |   100  |  8000  |   500   |      50    |   300000   |    300000   |
+| Result |    -     |    -    |   100  |  1000  |   500   |     100    |   300000   |    100000   |
+
+ID (500) Bits = 9, Length (100000) bits = 17, total <= 30 bits
 
 Negotiation: **Success**
 
@@ -458,11 +531,11 @@ Negotiation: **Success**
 
 | Peer   | Proposed | Allowed | ID Min | ID Max | ID Prop | Length Min | Length Max | Length Prop |
 | ------ | -------- | ------- | ------ | ------ | ------- | ---------- | ---------- | ----------- |
-| Peer A |  Simple  |    -    |    6   |    8   |     8   |    1000    |    2000    |     2000    |
-| Peer B |    -     | Simple  |   10   |   15   |    10   |    1000    |   30000    |    30000    |
-| Result |    -     |    -    |   10   |    8   |     8   |    1000    |    2000    |     2000    |
+| Peer A |  Simple  |    -    |    50  |    200 |    200  |    1000    |    2000    |     2000    |
+| Peer B |    -     | Simple  |  1000  |  30000 |   1000  |    1000    |   30000    |    30000    |
+| Result |    -     |    -    |  1000  |    200 |    200  |    1000    |    2000    |     2000    |
 
-The negotiated `ID Min` (10) is greater than the negotiated `ID Max` (8).
+The negotiated `ID Min` (1000) is greater than the negotiated `ID Max` (200).
 
 Negotiation: **Fail**
 
@@ -470,15 +543,15 @@ Negotiation: **Fail**
 
 | Peer   | Proposed | Allowed | ID Min | ID Max | ID Prop | Length Min | Length Max | Length Prop |
 | ------ | -------- | ------- | ------ | ------ | ------- | ---------- | ---------- | ----------- |
-| Peer A |  Simple  |    -    |    6   |   16   |    14   |      50    |  1000000   |         0   |
-| Peer B |    -     | Simple  |    6   |   18   |    15   |   40001    |  1000000   |         0   |
-| Result |    -     |    -    |    6   |   16   |    14   |   40001    |  1000000   |     65535   |
+| Peer A |  Simple  |    -    |   100  |  50000 |  10000  |       50   |  1000000   |        -1   |
+| Peer B |    -     | Simple  |   100  | 200000 |  20000  |    40001   |  1000000   |        -1   |
+| Result |    -     |    -    |   100  |  50000 |  10000  |    40001   |  1000000   |     65535   |
 
 In this case, both peer A and B used wildcard values for proposed length cap, so we use the formula:
 
 `length = (1000000-40001)/2 + 40001 = 520000.5`, rounded up to `520001`
 
-The resulting bit counts (id 14 bits, length 19 bits) are greater than 30, so the larger value is reduced:
+The resulting bit counts (id 10000 requires 14 bits, length 520001 requires 19 bits) are greater than 30, so the larger value is reduced:
 
 `length bits = 30 - 14 = 16 bits`
 `length = 2^16-1 = 65535`
@@ -489,12 +562,12 @@ Negotiation: **Success**
 
 | Peer   | Proposed | Allowed | ID Min | ID Max | ID Prop | Length Min | Length Max | Length Rec |
 | ------ | -------- | ------- | ------ | ------ | ------- | ---------- | ---------- | ---------- |
-| Peer A |  Simple  |    -    |    6   |   16   |    31   |      50    |  1000000   |        0   |
-| Peer B |    -     | Simple  |    6   |   18   |    31   |     250    |   200000   |        0   |
-| Result |    -     |    -    |    6   |   16   |    11   |     250    |   200000   |   100125   |
+| Peer A |  Simple  |    -    |   100  |  10000 |     -1  |      50    |  1000000   |       -1   |
+| Peer B |    -     | Simple  |   100  | 200000 |     -1  |     250    |   200000   |       -1   |
+| Result |    -     |    -    |   100  |  10000 |   5050  |     250    |   200000   |   100125   |
 
-`ID = (16-6)/2 + 6 = 11`
-`Length = (200000-250)/2 + 250 = 100125`
+`ID = (20000-100)/2 + 100 = 5050` (13 bits)
+`Length = (200000-250)/2 + 250 = 100125` (17 bits)
 
 Negotiation: **Success**
 
@@ -502,9 +575,9 @@ Negotiation: **Success**
 
 | Peer   | Proposed | Allowed | ID Min | ID Max | ID Prop | Length Min | Length Max | Length Prop |
 | ------ | -------- | ------- | ------ | ------ | ------- | ---------- | ---------- | ----------- |
-| Peer A |  Yield   |    -    |    8   |   15   |     8   |     1000   |   200000   |     8000    |
-| Peer B |    -     |  Yield  |    6   |   18   |    10   |      200   |    30000   |     1000    |
-| Result |    -     |    -    |    8   |   15   |     8   |      200   |    30000   |     8000    |
+| Peer A |  Yield   |    -    |   500  |  10000 |    500  |     1000   |   200000   |     8000    |
+| Peer B |    -     |  Yield  |   100  | 100000 |   1000  |      200   |    30000   |     1000    |
+| Result |    -     |    -    |   500  |  10000 |    500  |      200   |    30000   |     8000    |
 
 Since we are using quick init, Peer A's proposed values are chosen, and Peer B's proposed values are ignored.
 
@@ -516,9 +589,9 @@ Negotiation: **Success**
 
 | Peer   | Proposed | Allowed | ID Min | ID Max | ID Prop | Length Min | Length Max | Length Prop |
 | ------ | -------- | ------- | ------ | ------ | ------- | ---------- | ---------- | ----------- |
-| Peer A |  Yield   |    -    |    8   |   15   |     8   |     1000   |   200000   |    60000    |
-| Peer B |    -     |  Yield  |    6   |   18   |    10   |      200   |    30000   |     1000    |
-| Result |    -     |    -    |    8   |   15   |     8   |     1000   |    30000   |     fail    |
+| Peer A |  Yield   |    -    |   500  |  10000 |    500  |     1000   |   200000   |    60000    |
+| Peer B |    -     |  Yield  |   100  | 100000 |   1000  |      200   |    30000   |     1000    |
+| Result |    -     |    -    |   500  |  10000 |    500  |     1000   |    30000   |     fail    |
 
 Peer A's proposed length cap (60000) is higher than peer B's length max (30000).
 
@@ -531,7 +604,7 @@ Messaging Phase
 
 Messages are sent in chunks. A multi-chunk message has its `termination` field cleared to `0` for all but the last chunk. Single chunk messages always have the `termination` field set.
 
-The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. A response message inverts the scope: A peer responds to a request by using the same request ID as it received from the requesting peer in its response message.
+The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. A response message inverts the scope: A peer responds to a request by putting in its response message the same request ID it received from the requesting peer, and setting the `response` bit to `1`.
 
 Message chunks with the same ID must be sent in-order (chunk 5 of message 42 must not be sent before chunk 4 of message 42). The message is considered complete once the `termination` field is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. Chunks from different messages can be sent interleaved, like so:
 
@@ -549,28 +622,28 @@ Your choice of message chunk sizing and scheduling will depend on your use case.
 
 ### Message Flight
 
-While a peer is awaiting a response from the other peer, the ID of that message is considered "in-flight", and cannot be re-used in other messages until the cycle is complete. However, not all requests require a response. If a particular request doesn't require a response, it may be returned to the ID pool immediately.
+While a peer is awaiting a response from the other peer, the ID of that message is considered "in-flight", and cannot be re-used in other messages until the cycle is complete (responded to or cancel-acked). However, not all requests require a response. If a particular request doesn't require a response, it may be returned to the ID pool immediately.
 
-Peers must agree on which requests require (or don't require) a response in your protocol.
+Peers must agree about which requests require (or don't require) a response in your protocol, either through outside agreement, or encoded into the message payload somewhere in a protocol-dependent manner.
 
 Note: If a request does not require a reply, it cannot be [canceled](#cancel-message). Choose carefully which message types will require no reply in your protocol.
 
 
 ### Message Encoding
 
-| Field          | Type         | Size                                |
-| -------------- | ------------ | ----------------------------------- |
-| Chunk Header   | unsigned int | 1-4 (determined during negotiation) |
-| Fixed Data     | bytes        | determined during negotiation       |
-| Payload        | bytes        | variable                            |
-| Padding        | bytes        | determined during negotiation       |
+| Field          | Type         | Size                                 |
+| -------------- | ------------ | ------------------------------------ |
+| Chunk Header   | unsigned int | 1-4 (determined during negotiation)  |
+| Fixed Data     | bytes        | determined during negotiation        |
+| Payload        | bytes        | variable (length is in chunk header) |
+| Padding        | bytes        | determined during negotiation        |
 
 
 #### Chunk Header
 
 The message chunk header is treated as a single (8, 16, 24, or 32 bit) unsigned integer composed of bit fields, and is transmitted in little endian byte order.
 
-The header fields contain information about what kind of message this is. The request ID and length fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
+The header fields contain information about the message ID, payload length, and what kind of message this is. The request ID and length fields are placed adjacent to each other, next to the response and termination bits. Any unused upper bits must be cleared to `0`.
 
 | Field       | Bits                          | Order     |
 | ----------- | ----------------------------- | --------- |
@@ -580,7 +653,7 @@ The header fields contain information about what kind of message this is. The re
 | Response    | 1                             |           |
 | Termination | 1                             | Low Bit   |
 
-The header size is determined by the bit widths of the [ID cap](#field-_id_cap) and [length Cap](#field-_length_cap) values decided in the negotiation phase.
+The header size is determined by the bit widths of the [ID cap](#field-_id_cap) and [length Cap](#field-_length_cap) values decided upon during the negotiation phase.
 
 Bit size of ID cap + bit size of length cap:
 
@@ -606,7 +679,7 @@ A 0/6 header (0-bit ID, 6-bit length, which would result in an 8-bit header) wou
 
 ##### Length
 
-The length field refers to the number of useful octets in the payload portion of this chunk (the message chunk header itself does not count towards the length). The actual size of the payload section will be a multiple of the payload size if it was negotiated to a value other than 0 during the [negotiation phase](#negotiation-phase).
+The length field refers to the number of useful octets in the payload portion of this chunk (the message chunk header itself does not count towards the length). The actual size of the payload section will be a multiple of the payload size if it was negotiated to a value other than 0 during the [negotiation phase](#negotiation-phase), but the padding will not be included in the length.
 
 ##### Request ID
 
@@ -618,11 +691,11 @@ Note: The first chosen request ID in the session should be unpredictable in orde
 
 ##### Response
 
-The response bit is used to respond to a request sent by a peer. When set, the ID field refers to the ID of the original request sent by the requesting peer (scope is inverted).
+The response bit is used to respond to a request sent by a peer. When set to `1`, the ID field refers to the ID of the original request sent by the requesting peer (scope is inverted).
 
 ##### Termination
 
-The termination bit indicates that this is the final chunk for this request ID (as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to 0 for all but the last chunk.
+The termination bit indicates that this is the final chunk for this request ID (as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to `0` for all but the last chunk.
 
 
 #### Fixed Data Field
@@ -632,7 +705,7 @@ The contents of the fixed data portion of the message are completely free-form, 
 
 #### Payload Field
 
-The payload portion of the message contains the actual message data to pass to the next layer up. Its contents are application-specific, and its size is determined by the size field, as well as the padding amount determined during the [negotiation phase](#negotiation-phase). The length field denotes the number of useful octets in the payload field, and the actual size of the payload section will be a multiple of the padding amount (if padding amount is greater than 0).
+The payload portion of the message contains the actual message data to pass to the next layer up. Its contents are application-specific, and its size is determined by the size field, as well as the padding amount determined during the [negotiation phase](#negotiation-phase). The length field refers only to the number of used octets in the payload field, even though the field contents may be inflated to a multiple of the padding amount (if padding amount is greater than 0).
 
 
 ### Empty Response
@@ -644,14 +717,14 @@ An `empty response` is a response message (with the response bit set to `1`) con
 Out of Band Messages
 --------------------
 
-Out of band (OOB) messages are used for management of the protocol and session itself rather than for communication with the application (although they may affect the application's behavior). The system must be capable of sending OOB messages at a higher priority than any normal message, athough not all OOB messages will require such a high priority.
+Out of band (OOB) messages are used for management of the protocol and session itself rather than for communication with the application (although they may affect the application's behavior). The system must be capable of sending OOB messages at a higher priority than any normal message, athough not all OOB messages will necessarily require such a high priority.
 
 Like in normal messages, not all OOB messages require a response, in which case their ID may be recycled immediately.
 
 
 ### OOB Message Encoding
 
-An OOB message looks almost identical to a regular message chunk, except that it will have a length of 0 and a termination bit of 0. Because the length field is 0, a secondary 16-bit payload length field is present, giving a maximum OOB payload size of 65535. The rest of the message looks and behaves the same as a regular message.
+An OOB message looks almost identical to a regular message chunk, except that it will have a length of `0` and a termination bit of `0`. Because the length field is 0, a secondary 16-bit payload length field is present, giving a maximum OOB payload size of 65535. The rest of the message looks and behaves the same as a regular message.
 
 | Field              | Type         | Size                                |
 | ------------------ | ------------ | ----------------------------------- |
@@ -674,7 +747,7 @@ The optional filler field is available to aid in thwarting traffic analysis, and
 
 ### OOB Message Types
 
-The following OOB message types must be present in Streamux based protocols. You are free to add other message types as needed by your protocol.
+The following OOB message types must be present in Streamux based protocols. You are free to add other OOB message types as needed by your protocol.
 
 #### `ping` Message
 
@@ -742,14 +815,15 @@ Cancel request and response messages are encoded in a special way: While OOB mes
 Cancel requests and responses must be sent at the highest priority.
 
 
+
 Request Cancellation
 --------------------
 
 There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long, or the ID pool may be exhausted. A requesting peer may cancel an outstanding request by sending a cancel message, citing the request ID of the request to be canceled.
 
-Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operation the original request with that ID triggered, and send a cancel response at the highest priority.
+Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operations the original request with that ID triggered, and send a cancel response at the highest priority.
 
-Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used in request messages, and all response chunks to that request ID must be discarded. Once a cancel response is received for that ID, it is unlocked and may be used again.
+Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used in request messages, and all response chunks to that request ID must be discarded. Once a cancel response is received for that ID, it is returned to the ID pool and may be used again.
 
 #### Example:
 
@@ -760,10 +834,10 @@ Once a cancel request has been issued, the ID of the canceled request is locked.
 * Peer B sends response ID 19
 * Peer A discards response ID 19 (because Peer A's ID 19 is still locked)
 * Peer B receives `cancel` ID 19
-* Peer B sends `cancel ack` ID 19
-* Peer A receives `cancel ack` ID 19 and unlocks ID 19
+* Peer B sends `cancel response` ID 19
+* Peer A receives `cancel response` ID 19 and returns ID 19 to the ID pool
 
-If a `cancel ack` is not received, it means that either there is a communication problem (such as lag or a broken connection), or the serving peer is operating incorrectly.
+If a `cancel response` is not received, it means that either there is a communication problem (such as lag or a broken connection), or the responding peer is operating incorrectly.
 
 
 
@@ -775,14 +849,14 @@ There are situations where a peer may receive spurious (unexpected) messages. Sp
 * Response to a canceled request.
 * `cancel` message for a request not in progress.
 
-These situations can arise when the transmission medium is lagged, or as the result of a race condition. A response to a request may have already been en-route at the time of cancellation, or the operation may have already completed before the `cancel` message arrived. A response to a canceled request must be ignored and discarded. A peer must always respond to a `cancel` request with a `cancel ack`, even if there is no operation to cancel.
+These situations can arise when the transmission medium is lagged, or as the result of a race condition. A response to a request may have already been en-route at the time of cancellation, or the operation may have already completed before the `cancel` message arrived. A response to a canceled request must be ignored and discarded. A peer must always send a response to a `cancel` request, even if there is no operation to cancel or the request was not found.
 
 The following are error conditions:
 
 * Response to a nonexistent request.
-* `cancel ack` for a request that wasn't canceled.
+* `cancel response` for a request that wasn't canceled.
 
-In the error case, the peer may elect to report an error (outside of the scope of this protocol) or end the connection, depending on your use case.
+In the error case, the peer may elect to report an error and/or end the connection, depending on your use case.
 
 
 
