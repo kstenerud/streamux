@@ -234,7 +234,7 @@ Handshake negotiation is particularly useful when incorporating encryption into 
 | T4   |                                 | <=== | Negotiate: Handshake params              |
 | ...  | ...                             |      | ...                                      |
 | Tn-1 | Negotiate: Handshake params     | ===> |                                          |
-| Tn   |                                 | <=== | Negotiate: Is complete                   |
+| Tn   |                                 | <=== | Negotiate: is complete: success/failure  |
 | Tn+1 | (negotiation complete)          |      | (negotiation complete)                   |
 |      | Messages                        | <==> | Messages                                 |
 
@@ -251,7 +251,7 @@ Some negotiation failures aren't necessarily fatal. Depending on your protocol d
 
 A `soft failure` means that a particular negotiation attempt failed, but, if the negotiation mode or protocol allows it, the peers may make another attempt, or choose an alternative.
 
-A `hard failure` is considered unrecovarable, regardless of the negotiation mode. After a hard failure, the session is dead, and the peers should disconnect.
+A `hard failure` is always considered unrecovarable. After a hard failure, the session is dead, and the peers should disconnect.
 
 Note: Since `simple` and `yield` negotiation modes don't allow sending more than one negotiation message, all failures are hard failures in these modes.
 
@@ -279,12 +279,12 @@ This message must match exactly between peers, otherwise it is a [hard failure](
 
 The negotiation message facilitates negotiation of any parameters the peers must agree upon in order to communicate successfully.
 
-| Field          | Type         | Octets | Value   |
-| -------------- | ------------ | ------ | ------- |
-| Fixed Data     | bytes        |    *   | *       |
-| Payload Length | unsigned int |    2   | 0-65535 |
-| Payload        | bytes        |    *   | *       |
-| Padding        | bytes        |    *   | *       |
+| Field          | Type         | Octets | Value   | Notes                          |
+| -------------- | ------------ | ------ | ------- | ------------------------------ |
+| Fixed Data     | bytes        |    *   | *       | Determined through negotiation |
+| Payload Length | unsigned int |    2   | 0-65535 |                                |
+| Payload        | bytes        |    *   | *       |                                |
+| Padding        | bytes        |    *   | *       | Determined through negotiation |
 
 #### Fixed Data
 
@@ -296,11 +296,11 @@ The payload length refers to the length of the payload field only (it doesn't in
 
 #### Payload
 
-The payload field contains sub-fields with message-specific information (if any). Its contents may be encrypted at some point during the negotiation phase if encryption is used.
+The payload field contains sub-fields with message-specific information (if any). If encryption is used, this field (and any padding) must be encrypted as soon as it is possible to do so (after negotiating encryption parameters).
 
 #### Padding
 
-Padding is 0 until otherwise negotiated. Once [padding](#field-_padding) has been successfully negotiated to a value greater than 0, all future negotiation messages will have their payload contents padded to the next multiple of this value (padding does not affect the payload length field).
+Padding is 0 until otherwise negotiated. Once [padding](#field-_padding) has been successfully negotiated to a value greater than 0, this field in all future messages must contain the number of bytes required to pad out the payload field's length to a multiple of the padding amount. Block ciphers can then encrypt the payload + padding fields together. Padding does not count towards the payload length.
 
 
 ### Payload Sub-Fields
@@ -367,7 +367,7 @@ The ID Cap field negotiates the maximum allowed ID value in messages (implying t
 | `max`      | signed int  | 0 - 536870911        |
 | `proposed` | signed int  | 0 - 536870911, or -1 |
 
-Note: An ID cap of 0 means that there can be only one message in-flight at a time (all messages are implicitly ID 0).
+Note: An ID cap of 0 means that there can be only one message in-flight at a time (the ID field will have bit width 0, and therefore all messages will implicitly be ID 0).
 
 The `min`, `max`, and `proposed` sub-fields from the two peers ("us" and "them") are used to generate a negotiated value. The algorithm is as follows:
 
@@ -396,7 +396,7 @@ Peers may also use the "wildcard" value `-1` in the `proposed` field, meaning th
 
 #### Field `_length_cap`
 
-The Length Cap field negotiates the maximum allowed length of message payloads during this session. This affects only the length of the payload (padding is not included in the payload length calculation).
+The Length Cap field negotiates the maximum allowed length of message payloads during this session. This affects only the maximum length of the payload field (padding is not included in the payload length calculation).
 
 | Field      | Type       | Valid Range           |
 | ---------- | ---------- | --------------------- |
@@ -452,12 +452,12 @@ This field is a whitelist of negotiation modes that this peer supports. It may i
 
 If this field is not present, [`simple`] is assumed.
 
-Negotiation can only succeed if the other peer's [`_mode` field](#field-_mode) (other than `passive`) is present in this peer's `_allowed_modes` list. If not, it is a [hard failure](#hard-and-soft-failures).
+Negotiation can only succeed if the other peer's [proposed negotiation mode](#field-_mode) (other than `passive`) is present in this peer's `_allowed_modes` list. If not, it is a [hard failure](#hard-and-soft-failures).
 
 
 #### Field `_fixed_length`
 
-This field negotiates the length of the fixed-length portion in both normal and negotiation messages. It's primarily of use in supporting encryption channel or authentication data, for example a [message authentication code](https://en.wikipedia.org/wiki/Message_authentication_code).
+This field negotiates the length of the fixed-length portion in both normal and negotiation messages. It's primarily of use in supporting encryption channel or authentication data, for example a message authentication code.
 
 | Field      | Type         | Valid Range |
 | ---------- | ------------ | ----------- |
@@ -478,7 +478,7 @@ To defer to the other peer, simply choose `0` for proposed, and nonzero for `max
 
 #### Field `_padding`
 
-This field negotiates how much padding will be applied to both normal and negotiation message payloads. It's primarily of use in supporting [block ciphers](https://en.wikipedia.org/wiki/Block_cipher).
+This field negotiates how much padding will be applied to both normal and negotiation message payloads. It's primarily of use in supporting block ciphers.
 
 
 | Field      | Type         | Valid Range |
@@ -523,7 +523,7 @@ The optional filler field is available to aid in thwarting traffic analysis, and
 | Peer B |    -     | Simple  |   100  |  8000  |   500   |      50    |   300000   |    300000   |
 | Result |    -     |    -    |   100  |  1000  |   500   |     100    |   300000   |    100000   |
 
-ID (500) Bits = 9, Length (100000) bits = 17, total <= 30 bits
+ID (500) bits = 9, Length (100000) bits = 17, total <= 30 bits
 
 Negotiation: **Success**
 
@@ -579,9 +579,9 @@ Negotiation: **Success**
 | Peer B |    -     |  Yield  |   100  | 100000 |   1000  |      200   |    30000   |     1000    |
 | Result |    -     |    -    |   500  |  10000 |    500  |      200   |    30000   |     8000    |
 
-Since we are using quick init, Peer A's proposed values are chosen, and Peer B's proposed values are ignored.
+Since we are using yield mode, Peer A's proposed values are chosen, and Peer B's proposed values are ignored.
 
-Peer A's proposed values within the constraints of both peers.
+Peer A's proposed values are within the constraints of both peers.
 
 Negotiation: **Success**
 
@@ -593,7 +593,7 @@ Negotiation: **Success**
 | Peer B |    -     |  Yield  |   100  | 100000 |   1000  |      200   |    30000   |     1000    |
 | Result |    -     |    -    |   500  |  10000 |    500  |     1000   |    30000   |     fail    |
 
-Peer A's proposed length cap (60000) is higher than peer B's length max (30000).
+Peer A's proposed length cap (60000) is higher than peer B's length cap max (30000).
 
 Negotiation: **Fail**
 
@@ -622,9 +622,9 @@ Your choice of message chunk sizing and scheduling will depend on your use case.
 
 ### Message Flight
 
-While a peer is awaiting a response from the other peer, the ID of that message is considered "in-flight", and cannot be re-used in other messages until the cycle is complete (responded to or cancel-acked). However, not all requests require a response. If a particular request doesn't require a response, it may be returned to the ID pool immediately.
+While a peer is awaiting a response from the other peer, the ID of that message is considered "in-flight", and cannot be re-used in other messages until the cycle is complete (responded to or cancel-acknowledged). However, not all requests require a response. If a particular request doesn't require a response, it may be returned to the ID pool immediately.
 
-Peers must agree about which requests require (or don't require) a response in your protocol, either through outside agreement, or encoded into the message payload somewhere in a protocol-dependent manner.
+Peers must agree about which requests don't require a response in your protocol, either through outside agreement, or encoded into the message payload somewhere in a protocol-dependent manner.
 
 Note: If a request does not require a reply, it cannot be [canceled](#cancel-message). Choose carefully which message types will require no reply in your protocol.
 
@@ -677,10 +677,6 @@ A 0/6 header (0-bit ID, 6-bit length, which would result in an 8-bit header) wou
     llllllrt
 
 
-##### Length
-
-The length field refers to the number of useful octets in the payload portion of this chunk (the message chunk header itself does not count towards the length). The actual size of the payload section will be a multiple of the payload size if it was negotiated to a value other than 0 during the [negotiation phase](#negotiation-phase), but the padding will not be included in the length.
-
 ##### Request ID
 
 The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still in-flight (IDs that have been sent to the peer but have not yet received a response, or have been canceled but not yet cancel acked). The requesting peer must not re-use IDs that are currently in-flight.
@@ -688,6 +684,10 @@ The request ID field is a unique number that is generated by the requesting peer
 Request IDs are scoped to the requesting peer. For example, request ID 22 from peer A is distinct from request ID 22 from peer B.
 
 Note: The first chosen request ID in the session should be unpredictable in order to make known-plaintext attacks more difficult in cases where this protocol is overlaid on an encrypted transport (see [RFC 1750](https://tools.ietf.org/html/rfc1750)).
+
+##### Length
+
+The length field refers to the number of octets in the payload portion of this chunk (the message chunk header itself does not count towards the length).
 
 ##### Response
 
@@ -705,7 +705,15 @@ The contents of the fixed data portion of the message are completely free-form, 
 
 #### Payload Field
 
-The payload portion of the message contains the actual message data to pass to the next layer up. Its contents are application-specific, and its size is determined by the size field, as well as the padding amount determined during the [negotiation phase](#negotiation-phase). The length field refers only to the number of used octets in the payload field, even though the field contents may be inflated to a multiple of the padding amount (if padding amount is greater than 0).
+The payload portion of the message contains the actual message data to pass to the next layer up. Its contents are application-specific, and its length is determined by the length field in the chunk header.
+
+, as well as the padding amount determined during the [negotiation phase](#negotiation-phase). The length field refers only to the number of used octets in the payload field, even though the field contents may be inflated to a multiple of the padding amount (if padding amount is greater than 0).
+
+
+#### Padding Field
+
+If a padding amount greater than 0 was chosen during the [negotiation phase](#negotiation-phase), this field must contain the number of bytes required to pad out the payload field's length field to a multiple of the padding amount. Block ciphers can then encrypt the payload + padding fields together. Padding does not count towards the payload length.
+
 
 
 ### Empty Response
@@ -769,8 +777,8 @@ A string containing the contents of the alert.
 
 A string containing the severity of the alert:
 
-* `error`: Something in the session layer is malfunctioning, and the other peer may wish to end the session.
-* `warn`: Something may be incorrect or malfunctining in the session layer, but it may also be an edge case.
+* `error`: Something in the session layer is incorrect or malfunctioning.
+* `warn`: Something may be incorrect or malfunctining in the session layer, or may not work as would normally be expected.
 * `info`: Information that the other peer should know about. Use this sparingly.
 * `debug`: Never use this in production.
 
@@ -823,7 +831,7 @@ There are times when a requesting peer might want to cancel a request-in-progres
 
 Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operations the original request with that ID triggered, and send a cancel response at the highest priority.
 
-Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used in request messages, and all response chunks to that request ID must be discarded. Once a cancel response is received for that ID, it is returned to the ID pool and may be used again.
+Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used in request messages, and all response chunks to that request ID must be discarded. Once a cancel response is received for that ID, it is returned to the ID pool and may be used again. Because of this, ALL CANCEL REQUESTS MUST BE RESPONDED TO, regardless of their legitimacy.
 
 #### Example:
 
