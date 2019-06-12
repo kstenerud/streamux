@@ -73,13 +73,13 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Simple Mode](#simple-mode)
         * [Yield Mode](#yield-mode)
         * [Handshake Mode](#handshake-mode)
-    * [Negotiation Mode Negotiation](#negotiation-mode-negotiation)
     * [Identifier Message Negotiation](#identifier-message-negotiation)
+    * [Negotiation Mode Negotiation](#negotiation-mode-negotiation)
     * [Protocol Negotiation](#protocol-negotiation)
     * [Cap Negotiation](#cap-negotiation)
     * [Max Negotiation](#max-negotiation)
     * [Negotiation Examples](#negotiation-examples)
-* [Application Phase](#messaging-phase)
+* [Application Phase](#application-phase)
     * [Message Flight](#message-flight)
     * [Empty Response](#empty-response)
 * [Out Of Band Messages](#out-of-band-messages)
@@ -410,11 +410,11 @@ An alert message informs the other peer of an important events regarding the ses
 
 An alert message does not have a response.
 
-##### Field `_message`
+##### `_message`
 
 A string containing the contents of the alert.
 
-##### Field `_severity`
+##### `_severity`
 
 A string containing the severity of the alert:
 
@@ -676,6 +676,11 @@ At `T2`, the peers have successfully negotiated to use `handshake` mode. The acc
 At `T3`, the initiator peer evaluates the accepting peer's handshake message, and responds with another handshake message. This continues back and forth until one peer notifies the other that negotiation is complete using the [negotiation field](#_negotiation) (at `Tn`).
 
 
+### Identifier Message Negotiation
+
+The [identifier message](#identifier-message-encoding) must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
+
+
 ### Negotiation Mode Negotiation
 
 When a peer proposes the [negotiation mode](#_mode) `passive`, it is signaling that it will accept whatever negotiation mode the other peer proposes, provided that the other peer's proposed mode is in this peer's [allowed negotiation modes](#_allowed_modes).
@@ -687,11 +692,6 @@ Rules:
 * With the exception of `passive`, if the proposed mode doesn't exist in the other peer's [allowed negotiation modes](#_allowed_modes), it is a [hard failure](#hard-and-soft-failures).
 * If both peers propose `passive` mode, then negotiation defaults to `simple`, provided simple mode is in both peers' [allowed negotiation modes](#_allowed_modes). Otherwise it is a [hard failure](#hard-and-soft-failures).
 * As a special case, if both peers propose `simple`, then simple mode is automatically and successfully chosen, disregarding all other rules.
-
-
-### Identifier Message Negotiation
-
-The [identifier message](#identifier-message-encoding) must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
 
 
 ### Protocol Negotiation
@@ -920,64 +920,6 @@ The following are error conditions:
 * `cancel response` for a request that wasn't canceled.
 
 In the error case, the peer may elect to report an error and/or end the connection, depending on your use case.
-
-
-
-Types
------
-
-### Varint Type
-
-A `varint` is an unsigned integer encoding scheme developed by [Google](https://developers.google.com/protocol-buffers/docs/encoding). It encodes a value into a sequence of bytes where the lower 7 bits contain data and the high bit is used as a "continuation" bit. A decoder reads encoded bytes, filling a decoded unsigned integer 7 bits at a time in little endian order, until it encounters a byte with the high "continuation" bit cleared.
-
-##### Example: Decoding a varint from the sequence `[05 0f 4a e4 aa]`
-
-Since the first byte (`05`) has the high bit cleared, we are done, and the value is 5. The remaining 4 bytes are not part of the varint.
-
-##### Example: Decoding a varint from the sequence `[b4 d2 5a 91 ff]`
-
-Separate the continuation bits from the data bits:
-
-| Byte 0        | Byte 1        | Byte 2        |
-| ------------- | ------------- | ------------- |
-| `0xb4`        | `0xd2`        | `0x5a`        |
-| `10110100`    | `11010010`    | `01011010`    |
-| `1` `0110100` | `1` `1010010` | `0` `1011010` |
-
-Byte 2 (`0x5a`) has its high bit cleared, so the bytes following it (`[91 ff]`) are not part of the varint.
-
-The 7-bit groups are concatenated in little endian order:
-
-    Byte 2     Byte 1     Byte 0
-    1011010 ++ 1010010 ++ 0110100
-    = 101101010100100110100
-    = 10110 10101001 00110100
-    =  0x16     0xa9     0x34
-    = 0x16a934
-
-
-
-### Varpad Type
-
-Varpad is a padding mechanism developed by me that embeds the length of the padding within the padding itself. Varpad has a minimum length of 1 and no upper length limit.
-
-The varpad type contains a `length` field and a `zeroes` field:
-
-    [length][zeroes]
-
-* The `length` field is encoded as a [varint](#varint-type), and is itself included in the length count.
-* The `zeroes` field must be all zero bytes (0x00).
-
-Examples:
-
-| Sequence            | Result               |
-| ------------------- | -------------------- |
-| `01`                | 1 byte of padding    |
-| `02 00`             | 2 bytes of padding   |
-| `03 00 00`          | 3 bytes of padding   |
-| `fd 02`, `00` x 379 | 381 bytes of padding |
-
-The minimum length is 1 because the length field itself requires at least 1 byte to encode. You can work around this restriction with a flag somewhere else in your encoding that determines whether the varpad field will be present or not.
 
 
 
