@@ -77,7 +77,9 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Cancel Message](#cancel-message)
 * [Request Cancellation](#request-cancellation)
 * [Spurious Messages](#spurious-messages)
-* [Varint Type](#varint-type)
+* [Types](#types)
+    * [Varint Type](#varint-type)
+    * [Varpad Type](#varpad-type)
 
 
 
@@ -201,24 +203,9 @@ The fixed data field has a length of `0` until otherwise negotiated. Once [fixed
 
 #### Padding
 
-The padding field has a length of `0` until otherwise negotiated. Once [padding](#field-_padding) has been successfully negotiated to a value greater than `1`, padding is "enabled", and all future negotiation, application, and OOB messages must contain a `padding` field that pads out the `payload` length to a multiple of the padding amount.
+The session's padding amount is 0 until otherwise negotiated. Once [padding](#field-_padding) has been successfully negotiated to a value greater than `1`, padding is "enabled", and all future negotiation, application, and OOB messages must contain a `padding` field that pads out the `payload` length to a multiple of the padding amount.
 
-The padding field itself is split into `length` and `zeroes` sub-fields:
-
-    [length][zeroes]
-
-The `zeroes` field must be all zero bytes (0x00), and byte_length(`length`) + byte_length(`zeroes`) must equal the value of `length`.
-
-The `length` field is encoded as a [varint](#varint-type), and is itself included in the length count. For example:
-
-| Sequence            | Result               |
-| ------------------- | -------------------- |
-| `01`                | 1 byte of padding    |
-| `02 00`             | 2 bytes of padding   |
-| `03 00 00`          | 3 bytes of padding   |
-| `fd 02`, `00` x 379 | 381 bytes of padding |
-
-Note: Because the length field requires at least 1 byte to encode, the minimum length of the padding field is 1 when padding is enabled.
+The padding field itself is encoded as a [varpad](#varpad-type) of the appropriate length.
 
 #### Payload
 
@@ -848,10 +835,12 @@ In the error case, the peer may elect to report an error and/or end the connecti
 
 
 
-Varint Type
------------
+Types
+-----
 
-A `varint` encodes an unsigned integer value into a sequence of bytes where the lower 7 bits contain data and the high bit is used as a "continuation" bit. A decoder reads encoded bytes, filling a decoded unsigned integer 7 bits at a time in little endian order, until it encounters a byte with the high "continuation" bit cleared.
+### Varint Type
+
+A `varint` is an unsigned integer encoding scheme developed by [Google](https://developers.google.com/protocol-buffers/docs/encoding). It encodes a value into a sequence of bytes where the lower 7 bits contain data and the high bit is used as a "continuation" bit. A decoder reads encoded bytes, filling a decoded unsigned integer 7 bits at a time in little endian order, until it encounters a byte with the high "continuation" bit cleared.
 
 ##### Example: Decoding a varint from the sequence `[05 0f 4a e4 aa]`
 
@@ -877,6 +866,30 @@ The 7-bit groups are concatenated in little endian order:
     = 10110 10101001 00110100
     =  0x16     0xa9     0x34
     = 0x16a934
+
+
+
+### Varpad Type
+
+Varpad is a padding mechanism developed by me that embeds the length of the padding within the padding itself. Varpad has a minimum length of 1 and no upper length limit.
+
+The varpad type contains a `length` field and a `zeroes` field:
+
+    [length][zeroes]
+
+* The `length` field is encoded as a [varint](#varint-type), and is itself included in the length count.
+* The `zeroes` field must be all zero bytes (0x00).
+
+Examples:
+
+| Sequence            | Result               |
+| ------------------- | -------------------- |
+| `01`                | 1 byte of padding    |
+| `02 00`             | 2 bytes of padding   |
+| `03 00 00`          | 3 bytes of padding   |
+| `fd 02`, `00` x 379 | 381 bytes of padding |
+
+The minimum length is 1 because the length field itself requires at least 1 byte to encode. You can work around this restriction with a flag somewhere else in your encoding that determines whether the varpad field will be present or not.
 
 
 
