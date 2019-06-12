@@ -648,7 +648,7 @@ At `T2`, both peers have received each other's negotiation message, and have run
 
 With handshake negotiation, each peer sends negotiation messages in turn until a consensus is reached for all negotiation parameters, after which application messaging may begin.
 
-The contents of these negotiation messages depends on the needs of your protocol. The only requirement is that [certain information be present in the first negotiation message](#mandatory-payload-fields).
+The contents of these negotiation messages depends on the needs of your protocol. The only requirement is that [certain information be present in the first negotiation message](#mandatory-negotiation-fields).
 
 Handshake negotiation is only considered complete when one of the peers includes the [negotiation field](#_negotiation) in a neogtiation message. What leads to this is entirely up to your protocol. If the receiving peer disagrees with the sending peer's assessment of the negotiation, it is a [hard failure](#hard-and-soft-failures).
 
@@ -863,12 +863,12 @@ While a peer is awaiting an application or OOB response from the other peer, the
 
 Peers must agree about which requests don't require a response in your protocol, either through outside agreement, or encoded into the message payload somewhere in a protocol-dependent manner.
 
-Note: If a request does not require a reply, it cannot be [canceled](#cancel-message). Choose carefully which message types will require no reply in your protocol.
+Note: If a request does not require a reply, it cannot be [canceled](#request-cancellation). Choose carefully which message types will require no reply in your protocol.
 
 
 ### Empty Response
 
-An `empty response` is a response message (with the response bit set to `1`) containing no data. `empty response` signals successful completion of the request, with no other data to report.
+An `empty response` is an application or OOB response message containing no data. `empty response` signals successful completion of the request, with no other data to report.
 
 
 
@@ -882,7 +882,7 @@ Because they affect the session itself, OOB messages have different requirements
 
 ### Request Cancellation
 
-There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long, or the ID pool may be exhausted. A requesting peer may cancel an outstanding request by sending a cancel message, citing the request ID of the request to be canceled.
+There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long, or the ID pool may be exhausted. A requesting peer may cancel an outstanding request by sending a [cancel message](#cancel-message), citing the request ID of the request to be canceled.
 
 Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operations the original request with that ID triggered, and send a cancel response at the highest priority.
 
