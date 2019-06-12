@@ -19,7 +19,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 
 * [Use Case](#use-case)
 * [General Operation](#general-operation)
-* [Messages](#messages)
+* [Message Types](#message-types)
     * [Identifier Message](#identifier-message)
     * [Negotiation Message](#negotiation-message)
     * [Application Message](#application-message)
@@ -59,9 +59,10 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Length](#length)
         * [Fixed Data](#fixed-data)
         * [Variable Data](#variable-data)
+        * [Padding](#padding)
     * [Message Chunk](#message-chunk)
         * [Chunk Header](#chunk-header)
-            * [Request ID Field](#request-id-field)
+            * [Request ID](#request-id)
             * [OOB Bit](#oob-bit)
             * [Response Bit](#response-bit)
             * [Termination Bit](#termination-bit)
@@ -157,8 +158,8 @@ The negotiation phase begins with each peer sending an identifer message, follow
 
 
 
-Messages
---------
+Message Types
+-------------
 
 Streamux is message oriented, and has four main kinds of messages:
 
@@ -211,14 +212,14 @@ A negotiation message is a [message envelope](#message-envelope) containing a [C
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
-If padding is enabled, it is placed before the fields as a [varpad](#varpad-type).
+If [padding](#padding) is enabled, it is placed before the fields as a [varpad](#varpad-type).
 
 Contents of [`variable data`](#variable-data):
 
-| Field         | Type       | Octets | Notes                           |
-| ------------- | ---------- | ------ | ------------------------------- |
-| Padding       | varpad     |   1+   | Only present if padding enabled |
-| Fields        | inline map |   *    |                                 |
+| Field              | Type       | Octets | Notes                                          |
+| ------------------ | ---------- | ------ | ---------------------------------------------- |
+| Padding            | varpad     |   1+   | Only present if [padding is enabled](#padding) |
+| Negotiation Fields | inline map |   *    |                                                |
 
 
 #### Mandatory Negotiation Fields
@@ -244,26 +245,24 @@ The proposed negotiation mode must be one of:
 
 The Protocol field contains the identifier and version of the proposed protocol to be overlaid on top of Streamux:
 
-| Field | Type   |
-| ----- | ------ |
-| `id`  | string |
-| `ver` | string |
+| Field      | Type   |
+| ---------- | ------ |
+| `_id`      | string |
+| `_version` | string |
 
-`id` (Identifier) uniquely identifies the protocol that will be used on top of this protocol.
+`_id` uniquely identifies the protocol that will be used on top of this protocol.
 
-`ver` (Version) is a string following [Semantic Versioning 2.0.0](https://semver.org/). `MAJOR` version changes indicate a backwards incompatible change, and so only the `MAJOR` portion is considered when deciding compatibility between peers. `MINOR` and `PATCH` information are only used for diagnostic and debugging purposes.
+`_version` is a string following [Semantic Versioning 2.0.0](https://semver.org/). `MAJOR` version changes indicate a backwards incompatible change, and so only the `MAJOR` portion is considered when deciding compatibility between peers. `MINOR` and `PATCH` information are only used for diagnostic and debugging purposes.
 
 ##### `_id_cap`
 
-Negotiates the maximum allowed ID value (ID cap) in messages, implying the maximum number of messages that may be [in-flight](#message-flight) at a time during this session.
+Negotiates the maximum allowed ID value (ID cap) in messages, implying the maximum number of messages that may be [in-flight](#message-flight) at a time during this session. An ID cap of 0 effectively means that there can be only one message in-flight at a time.
 
-| Field      | Type         | Meaning                                        |
-| ---------- | ------------ | ---------------------------------------------- |
-| `min`      | unsigned int | Maximum cap allowed by this peer               |
-| `max`      | unsigned int | Minimum cap allowed by this peer               |
-| `proposed` | signed int   | Proposed cap to the other peer (-1 = wildcard) |
-
-Note: An ID cap of 0 effectively means that there can be only one message in-flight at a time.
+| Field       | Type         | Meaning                                              |
+| ----------- | ------------ | ---------------------------------------------------- |
+| `_min`      | unsigned int | Maximum cap allowed by this peer                     |
+| `_max`      | unsigned int | Minimum cap allowed by this peer                     |
+| `_proposed` | signed int   | Proposed cap to the other peer (negative = wildcard) |
 
 ##### `_length_cap`
 
@@ -296,10 +295,10 @@ If this field is never negotiated, [`simple`] is assumed.
 
 This field negotiates the length of the fixed-length portion in message envelopes.
 
-| Field      | Type         |
-| ---------- | ------------ |
-| `max`      | unsigned int |
-| `proposed` | unsigned int |
+| Field       | Type         |
+| ----------- | ------------ |
+| `_max`      | unsigned int |
+| `_proposed` | unsigned int |
 
 `max` defines the maximum fixed length this peer will agree to.
 
@@ -312,7 +311,7 @@ To defer to the other peer, choose `0` for proposed, and nonzero for `max`.
 
 #### `_padding`
 
-Negotiates the multiple to which the `variable data` portion of all [message envelopes](#message-envelope) must be padded. It is encoded the same way as the [fixed length negotiation field](#_fixed_length).
+Negotiates the multiple to which the `variable data` portion of all [message envelopes](#message-envelope) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length).
 
 #### `_packed`
 
@@ -328,42 +327,44 @@ This field is unneeded and ignored in [simple](#simple-mode) and [yield](#yield-
 
 #### `_`
 
-The optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to negotiation messages if encryption is used. The receiving peer must discard this field if encountered.
+This optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to negotiation messages if encryption is used. The receiving peer must discard this field if encountered.
 
 
 ### Single and Packed Chunk Envelopes
 
-Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The enveloping mode is negotiated once for the entire session. The encoding changes slightly depending on the mode.
+Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The envelope mode is negotiated once for the entire session, and the encoding is slightly different depending on the mode.
 
 The default mode if not negotiated is single chunk mode.
 
 #### Single Chunk Envelope Mode
 
-In single chunk mode, the [`variable data`](#variable-data) field contains possible padding as a [varpad](#varpad-type), a [chunk header](#chunk-header), and a chunk payload.
+In single chunk mode, the [`variable data`](#variable-data) field contains possible [padding](#padding) as a [varpad](#varpad-type), a [chunk header](#chunk-header), and a chunk payload.
 
-| Field         | Type   | Octets | Notes                           |
-| ------------- | ------ | ------ | ------------------------------- |
-| Padding       | varpad |   1+   | Only present if padding enabled |
-| Chunk Header  | varint |   1+   |                                 |
-| Chunk Payload | bytes  |   *    |                                 |
+| Field         | Type   | Octets | Notes                                          |
+| ------------- | ------ | ------ | ---------------------------------------------- |
+| Padding       | varpad |   1+   | Only present if [padding is enabled](#padding) |
+| Chunk Header  | varint |   1+   |                                                |
+| Chunk Payload | bytes  |   *    |                                                |
 
 #### Packed Chunk Envelope Mode
 
-In packed chunk mode, the [`variable data`](#variable-data) field contains a series of message chunks, with any required padding added as zero bytes at the end:
+In packed chunk mode, the [`variable data`](#variable-data) field contains a series of message chunks, with any required [padding](#padding) added as zero bytes at the end:
 
-| Field         | Type   | Octets | Notes                          |
-| ------------- | ------ | ------ | ------------------------------ |
-| Chunk Length  | varint |   1+   |                                |
-| Chunk Header  | varint |   1+   |                                |
-| Chunk Payload | bytes  |   *    |                                |
-|               |        |        |                                |
-| Chunk Length  | varint |   1+   |                                |
-| Chunk Header  | varint |   1+   |                                |
-| Chunk Payload | bytes  |   *    |                                |
-| ...           | ...    |  ...   |                                |
-| Padding       | bytes  |   *    | Determined through negotiation |
+| Field         | Type   | Octets | Notes                                          |
+| ------------- | ------ | ------ | ---------------------------------------------- |
+| Chunk Length  | varint |   1+   |                                                |
+| Chunk Header  | varint |   1+   |                                                |
+| Chunk Payload | bytes  |   *    |                                                |
+|               |        |        |                                                |
+| Chunk Length  | varint |   1+   |                                                |
+| Chunk Header  | varint |   1+   |                                                |
+| Chunk Payload | bytes  |   *    |                                                |
+| ...           | ...    |  ...   |                                                |
+| Padding       | bytes  |   *    | Only present if [padding is enabled](#padding) |
 
 Chunk length refers to the length of the `chunk payload`. It does not include the length of any other field.
+
+Padding, if present, must contain only zero bytes (0x00).
 
 
 
@@ -391,12 +392,12 @@ This field is required in all OOB messages.
 
 #### `_`
 
-The optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to OOB messages if encryption is used. The receiving peer must discard this field if encountered.
+This optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to OOB messages if encryption is used. The receiving peer must discard this field if encountered.
 
 
 ### OOB Message Types
 
-The following OOB message types must be present in Streamux based protocols. You are free to add other OOB message types needed by your protocol, and to add additional fields to existing types.
+The following OOB message types must be present in Streamux based protocols. You are free to add other OOB message types needed by your protocol or add additional fields to existing types.
 
 #### `ping` Message
 
@@ -418,12 +419,12 @@ A string containing the contents of the alert.
 
 A string containing the severity of the alert:
 
-* `error`: Something in the session layer is incorrect or malfunctioning.
+* `error`: Something in the session layer is definitely incorrect or malfunctioning.
 * `warn`: Something may be incorrect or malfunctining in the session layer, or may not work as would normally be expected.
 * `info`: Information that the other peer should know about. Use this sparingly.
 * `debug`: Never use this in production.
 
-Alert message priority is up to the implementation. Error messages should normally be given the highest priority to avoid potential data loss.
+Alert message priority is up to the implementation. Error alerts should normally be given the highest priority to avoid potential data loss.
 
 #### `disconnect` Message
 
@@ -451,9 +452,9 @@ A start message does not have a response.
 
 #### `cancel` Message
 
-The cancel message requests that the other peer cancel an operation.
+The cancel message requests that the other peer cancel an operation and acknowledge.
 
-While OOB messages (and application messages) normally allocate a new message ID, the cancel message re-uses the ID of the request it wants to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available message IDs are in flight).
+While OOB and application messages normally allocate a new message ID, the cancel message re-uses the ID of the request it wants to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available message IDs are in flight).
 
 Cancel requests and responses must be sent at the highest priority.
 
@@ -462,28 +463,34 @@ Cancel requests and responses must be sent at the highest priority.
 
 The message envelope consists of a length field, followed by possible fixed data, and then the remaining data, whose composition depends on the message type.
 
-| Field         | Type   | Octets | Notes                           |
-| ------------- | ------ | ------ | ------------------------------- |
-| Length        | varint |   1+   |                                 |
-| Fixed Data    | bytes  |   *    | Length 0 until negotiated       |
-| Variable Data | bytes  |   *    |                                 |
+| Field           | Type   | Octets | Notes                           |
+| --------------- | ------ | ------ | ------------------------------- |
+| Envelope Length | varint |   1+   |                                 |
+| Fixed Data      | bytes  |   *    | Length 0 until negotiated       |
+| Variable Data   | bytes  |   *    |                                 |
 
-#### Length
+#### Envelope Length
 
-Length is the byte length of the entire message envelope (including the length field itself). Length is encoded as a [varint](#varint-type).
+This is the byte length of the entire message envelope (including the length field itself). Envelope length is encoded as a [varint](#varint-type).
 
 #### Fixed Data
 
-The `fixed data` field has a length of `0` until otherwise negotiated. Once [fixed data length](#_fixed_length) has been successfully negotiated in the negotiation phase to a value greater than `0`, all future message envelopes must contain a `fixed data` field of the selected length. The contents of the `fixed data` field are protocol-specific, and beyond the scope of this document.
+The `fixed data` field has a length of `0` until otherwise negotiated. Once [fixed data length](#_fixed_length) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed data` field of the selected length. The contents of the `fixed data` field are protocol-specific, and beyond the scope of this document.
 
 #### Variable Data
 
-This is the envelope's main payload. Most commonly, it will contain a [message chunk](#message-chunk), and possibly padding.
+This is the envelope's main payload. Most commonly, it will contain a [message chunk](#message-chunk) and possibly padding.
+
+#### Padding
+
+Padding is always applied to the `variable data` field of a message envelope to bring its length to a multiple of the padding amount. Where the padding is placed, and what type of padding is used, is specific to the message type contained in the envelope.
+
+Padding is negotiated via the [`_padding` field](#_padding).
 
 
 ### Message Chunk
 
-A message chunk contains a portion of a message, encoded as a header and a payload.
+A message chunk contains a portion of a message (or perhaps an entire message, if it's small enough), encoded as a chunk header and a payload.
 
 | Field        | Type   | Octets |
 | ------------ | ------ | ------ |
@@ -501,9 +508,9 @@ The `chunk header` is a [varint](#varint-type) encoded unsigned integer containi
 | Response    | 1    |           |
 | Termination | 1    | Low Bit   |
 
-##### Request ID Field
+##### Request ID
 
-The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still in-flight (IDs that have been sent to the peer but have not yet received a response, or have been canceled but not yet cancel acked). The requesting peer must not re-use IDs that are currently in-flight.
+The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still [in-flight](#message-flight). The requesting peer must not re-use IDs that are currently in-flight.
 
 Request IDs are scoped to the requesting peer. For example, request ID 22 from peer A is distinct from request ID 22 from peer B.
 
@@ -533,7 +540,7 @@ The varpad type contains a `length` field and a `zeroes` field:
     [length][zeroes]
 
 * The `length` field is encoded as a [varint](#varint-type), and is itself included in the length count.
-* The `zeroes` field must be all zero bytes (0x00).
+* The `zeroes` field fills out the padding to the desired length, and must be all zero bytes (0x00).
 
 Examples:
 
@@ -696,7 +703,7 @@ Rules:
 
 ### Protocol Negotiation
 
-The ID and the `MAJOR` portion of the version in a peer's [protocol](#_protocol) proposal must match exactly with the other peer, otherwise it is a [hard failure](#hard-and-soft-failures).
+The ID field and the `MAJOR` portion of the version field in a peer's [protocol](#_protocol) proposal must match exactly with the other peer, otherwise it is a [soft failure](#hard-and-soft-failures).
 
 
 ### Cap Negotiation
@@ -711,7 +718,7 @@ The `min`, `max`, and `proposed` sub-fields from the two peers ("us" and "them")
     max = minimum(us.max, them.max)
     if max < min: fail
 
-A failure here is a [hard failure](#hard-and-soft-failures).
+A failure here is a [soft failure](#hard-and-soft-failures).
 
 #### Proposed:
 
@@ -719,7 +726,7 @@ A failure here is a [hard failure](#hard-and-soft-failures).
 
 #### Wildcards:
 
-Peers may also use the "wildcard" value `-1` in the `proposed` field, meaning that they will defer to the other peer's proposed value. This changes how `proposed` is calculated:
+Peers may also use the "wildcard" value (any negative value) in the `proposed` field, meaning that they will defer to the other peer's proposed value. This changes how `proposed` is calculated:
 
     if us.proposed = wildcard: proposed = them.proposed
     if them.proposed = wildcard: proposed = us.proposed
@@ -740,8 +747,6 @@ Recall that these fields have two unsigned integer subfields:
 * `proposed` defines the length that this peer proposes to use.
 
 The negotiation process chooses the higher of the two peer's `proposed` values. If the chosen value is greater than either of the peer's `max` values, it is a [soft failure](#hard-and-soft-failures).
-
-To defer to the other peer, simply choose `0` for proposed, and nonzero for `max`.
 
 
 
@@ -843,27 +848,29 @@ Application and OOB messages are given their own message ID during their [flight
 
 The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. A response message inverts the scope: A peer responds to a request by putting in its response message the same request ID it received from the requesting peer, and setting the `response` bit to `1`.
 
-Message chunks with the same ID must be sent in-order (chunk 5 of message 42 must not be sent before chunk 4 of message 42). The message is considered complete once the `termination` field is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. Chunks from different messages can be sent interleaved, like so:
+Message chunks with the same ID must be sent in-order (chunk 5 of request ID 42 must not be sent before chunk 4 of request ID 42). The message is considered complete once the `termination` field is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. Chunks from different messages can be sent interleaved, like so:
 
-* Message 10, chunk 0
-* Message 11, chunk 0
-* Message 12, chunk 0
-* Message 11, chunk 1
-* Message 10, chunk 1 (termination = true)
-* Message 11, chunk 2
-* Message 12, chunk 1 (termination = true)
-* Message 11, chunk 3 (termination = true)
+* Message ID 10, chunk 0
+* Message ID 11, chunk 0
+* Message ID 12, chunk 0
+* Message ID 11, chunk 1
+* Message ID 10, chunk 1 (termination = true)
+* Message ID 11, chunk 2
+* Message ID 12, chunk 1 (termination = true)
+* Message ID 11, chunk 3 (termination = true)
 
 Your choice of message chunk sizing and scheduling will depend on your use case.
 
 
 ### Message Flight
 
-While a peer is awaiting an application or OOB response from the other peer, the ID of that message is considered "in-flight", and cannot be re-used in other messages until the cycle is complete (responded to or cancel-acknowledged). However, not all requests require a response. If a particular request doesn't require a response, it may be returned to the ID pool immediately.
+Every application and OOB message must be assigned a unique ID that will remain in use until the message has received a response or has been successfully [canceled](#request-cancellation). While the ID is in use, we say that it is "in-flight".
 
-Peers must agree about which requests don't require a response in your protocol, either through outside agreement, or encoded into the message payload somewhere in a protocol-dependent manner.
+An "in-flight" ID cannot be re-used in other messages until its message cycle has completed (either it has been responded to, or it has been canceled and we have received a cancel response).
 
-Note: If a request does not require a reply, it cannot be [canceled](#request-cancellation). Choose carefully which message types will require no reply in your protocol.
+If a particular message type doesn't require a response, its ID is returned to the ID pool immediately after being sent. Such messages must be explicitly defined in your protocol to not require a response.
+
+Note: Messages that don't require a response cannot be canceled. Choose carefully when designing your protocol.
 
 
 ### Empty Response
@@ -886,7 +893,9 @@ There are times when a requesting peer might want to cancel a request-in-progres
 
 Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operations the original request with that ID triggered, and send a cancel response at the highest priority.
 
-Once a cancel request has been issued, the ID of the canceled request is locked. A locked request ID cannot be used in request messages, and all response chunks to that request ID must be discarded. Once a cancel response is received for that ID, it is returned to the ID pool and may be used again. Because of this, ALL CANCEL REQUESTS MUST BE RESPONDED TO, regardless of their legitimacy.
+When a cancel request is issued, the ID of the canceled request remains locked ["in-flight"](#message-flight) until a cancel response is received for that ID. All response chunks to that request ID must be discarded until a cancel response is received.
+
+Because the request ID remains locked until a response is received, ALL CANCEL REQUESTS MUST BE RESPONDED TO, regardless of their legitimacy. If a peer believes the other is misbehaving, it can send an [alert message](#alert-message) AFTER responding to the cancel request.
 
 #### Example:
 
@@ -919,7 +928,7 @@ The following are error conditions:
 * Response to a nonexistent request.
 * `cancel response` for a request that wasn't canceled.
 
-In the error case, the peer may elect to report an error and/or end the connection, depending on your use case.
+In the error case, the peer must send an [error message](#alert-message) to alert the other peer. It may also possibly end the session, depending on your protocol design.
 
 
 
