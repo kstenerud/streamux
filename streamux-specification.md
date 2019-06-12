@@ -321,7 +321,7 @@ If this field is never negotiated, `false` (single chunk envelopes) is assumed.
 
 #### `_negotiation`
 
-During [handshake negotiation](#handshake-mode), the presence of this field marks the end of negotiation, with a boolean value of `true` for successful negotiation. In other negotiation modes, this field is ignored if present.
+During [handshake negotiation](#handshake-mode), the presence of this field marks the end of negotiation, with a boolean value of `true` for successful negotiation.
 
 This field is unneeded and ignored in [simple](#simple-mode) and [yield](#yield-mode) modes, because success or failure is implied from the first (and only) message exchange.
 
@@ -410,6 +410,8 @@ Ping messages (and responses) must be sent at the highest priority.
 An alert message informs the other peer of an important events regarding the session (such as warnings, errors, etc). This message should not be used to transport application level events.
 
 An alert message does not have a response.
+
+The alert message contains the following fields:
 
 ##### `_message`
 
