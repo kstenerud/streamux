@@ -426,7 +426,7 @@ A string containing the severity of the alert:
 * `info`: Information that the other peer should know about. Use this sparingly.
 * `debug`: Never use this in production.
 
-Alert message priority is up to the implementation. Error alerts should normally be given the highest priority to avoid potential data loss.
+Alert message priority is up to your protocol design. Error alerts should normally be given the highest priority to avoid potential data loss.
 
 #### `disconnect` Message
 
@@ -606,7 +606,7 @@ Note: Since `simple` and `yield` negotiation modes don't allow sending more than
 
 ### Negotiation Modes
 
-There are three modes of negotiation supported. An implementation is not required to support all of them. Your protocol design will dictate which mode(s) work best for your needs.
+There are three modes of negotiation supported. A protocol is not required to support all of them. Your protocol design will dictate which mode(s) work best for your needs.
 
 
 #### Simple Mode
