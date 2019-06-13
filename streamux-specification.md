@@ -6,9 +6,9 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
 
 ### Features
 
-* Minimal Overhead (header can be as small as 1 byte per message chunk)
+* Minimal Overhead (header can be as small as 2 bytes per message chunk)
 * Multiplexing (multiple data streams can be sent across a single channel)
-* Asynchronous (client is informed asynchronously upon completion or error)
+* Asynchronous (peers are informed asynchronously upon completion or error)
 * Interruptible (requests may be canceled)
 * Floating roles (both peers can operate as client and server at the same time)
 * Multiple negotiation modes
@@ -28,35 +28,35 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
     * [Identifier Message Encoding](#identifier-message-encoding)
     * [Negotiation Message Encoding](#negotiation-message-encoding)
         * [Mandatory Negotiation Fields](#mandatory-negotiation-fields)
-            * [`_mode` Field](#_mode)
-            * [`_protocol` Field](#_protocol)
-            * [`_id_cap` Field](#_id_cap)
-            * [`_length_cap` Field](#_length_cap)
+            * [Mode Field](#_mode-field)
+            * [Protocol Field](#_protocol-field)
+            * [ID Cap Field](#_id_cap-field)
+            * [Length Cap Field](#_length_cap-field)
         * [Optional Negotiation Fields](#optional-negotiation-fields)
-            * [`_allowed_modes` Field](#_allowed_modes)
-            * [`_fixed_length` Field](#_fixed_length)
-            * [`_padding` Field](#_padding)
-            * [`_packed` Field](#_packed)
-            * [`_negotiation` Field](#_negotiation)
-            * [`_` Field](#_)
+            * [Allowed Modes Field](#_allowed_modes-field)
+            * [Fixed Length Field](#_fixed_length-field)
+            * [Padding Field](#_padding-field)
+            * [Envelope Field](#_envelope-field)
+            * [Negotiation Field](#_negotiation-field)
+            * [`_` Field](#_-field)
     * [Single and Packed Chunk Envelopes](#single-and-packed-chunk-envelopes)
         * [Single Chunk Envelope Mode](#single-chunk-envelope-mode)
         * [Packed Chunk Envelope Mode](#packed-chunk-envelope-mode)
     * [Application Message Encoding](#application-message-encoding)
     * [OOB Message Encoding](#oob-message-encoding)
-        * [`_oob` Field](#_oob)
-        * [`_` Field](#_)
+        * [OOB Field](#_oob-field)
+        * [`_` Field](#_-field)
     * [OOB Message Types](#oob-message-types)
-        * [Ping Message](#ping-message)
-        * [Alert Message](#alert-message)
-            * [`_message` Field](#_message)
-            * [`_severity` Field](#_severity)
-        * [Disconnect Message](#disconnect-message)
-        * [Stop Message](#stop-message)
-        * [Start Message](#start-message)
-        * [Cancel Message](#cancel-message)
+        * [Ping Message](#_ping-message)
+        * [Alert Message](#_alert-message)
+            * [Message Field](#_message-field)
+            * [Severity Field](#_severity-field)
+        * [Disconnect Message](#_disconnect-message)
+        * [Stop Message](#_stop-message)
+        * [Start Message](#_start-message)
+        * [Cancel Message](#_cancel-message)
     * [Message Envelope](#message-envelope)
-        * [Length](#length)
+        * [Envelope Length](#envelope-length)
         * [Fixed Data](#fixed-data)
         * [Variable Data](#variable-data)
         * [Padding](#padding)
@@ -66,6 +66,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
             * [OOB Bit](#oob-bit)
             * [Response Bit](#response-bit)
             * [Termination Bit](#termination-bit)
+        * [Chunk Payload](#chunk-payload)
     * [Varpad Type](#varpad-type)
     * [Varint Type](#varint-type)
 * [Negotiation Phase](#negotiation-phase)
@@ -74,7 +75,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Simple Mode](#simple-mode)
         * [Yield Mode](#yield-mode)
         * [Handshake Mode](#handshake-mode)
-    * [Identifier Message Negotiation](#identifier-message-negotiation)
+    * [Identifier Negotiation](#identifier-negotiation)
     * [Negotiation Mode Negotiation](#negotiation-mode-negotiation)
     * [Protocol Negotiation](#protocol-negotiation)
     * [Cap Negotiation](#cap-negotiation)
@@ -140,7 +141,7 @@ General Operation
 
 There are two main phases to a Streamux session: the negotiation phase and the application phase.
 
-The negotiation phase begins with each peer sending an identifer message, followed by at least one negotiation message. Communication in the negotiation phase is synchronous after the first negotiation message, and becomes asynchronous when the phase ends. Once negotiation has sucessfully completed, the application phase begins. A typical session might look something like this:
+The negotiation phase begins with each peer sending an identifier message, followed by at least one negotiation message. Communication in the negotiation phase is synchronous after the first negotiation message, and becomes asynchronous when the phase ends. Once negotiation has successfully completed, the application phase begins. A typical session might look something like this:
 
 | Peer X        | Peer Y        |
 | ------------- | ------------- |
@@ -161,7 +162,7 @@ The negotiation phase begins with each peer sending an identifer message, follow
 Message Types
 -------------
 
-Streamux is message oriented, and has four main kinds of messages:
+Streamux has four main kinds of messages:
 
 ### Identifier Message
 
@@ -208,11 +209,11 @@ The Streamux version is currently 1.
 
 ### Negotiation Message Encoding
 
-A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) inline map in the variable data section. An inlined map contains only the key-value pairs, not the "begin map" or "end container" markers. Fields are encoded as key-value pairs in this map.
+A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) inline map in the `variable data` section. An inline map contains only the key-value pairs, not the "begin map" or "end container" markers. Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
-If [padding](#padding) is enabled, it is placed before the fields as a [varpad](#varpad-type).
+If [padding](#padding) is enabled, it is placed before the negotiation fields as a [varpad](#varpad-type).
 
 Contents of [`variable data`](#variable-data):
 
@@ -233,7 +234,7 @@ The first negotiation message sent by each peer must contain at least the follow
 | `_id_cap`     | map    | Maximum allowable ID value     |
 | `_length_cap` | map    | Maximum allowable length value |
 
-##### `_mode`
+##### `_mode` Field
 
 The proposed negotiation mode must be one of:
 - `passive`
@@ -241,7 +242,7 @@ The proposed negotiation mode must be one of:
 - `yield`
 - `handshake`
 
-##### `_protocol`
+##### `_protocol` Field
 
 The Protocol field contains the identifier and version of the proposed protocol to be overlaid on top of Streamux:
 
@@ -254,7 +255,7 @@ The Protocol field contains the identifier and version of the proposed protocol 
 
 `_version` is a string following [Semantic Versioning 2.0.0](https://semver.org/). `MAJOR` version changes indicate a backwards incompatible change, and so only the `MAJOR` portion is considered when deciding compatibility between peers. `MINOR` and `PATCH` information are only used for diagnostic and debugging purposes.
 
-##### `_id_cap`
+##### `_id_cap` Field
 
 Negotiates the maximum allowed ID value (ID cap) in messages, implying the maximum number of messages that may be [in-flight](#message-flight) at a time during this session. An ID cap of 0 effectively means that there can be only one message in-flight at a time.
 
@@ -264,7 +265,7 @@ Negotiates the maximum allowed ID value (ID cap) in messages, implying the maxim
 | `_max`      | unsigned int | Minimum cap allowed by this peer                     |
 | `_proposed` | signed int   | Proposed cap to the other peer (negative = wildcard) |
 
-##### `_length_cap`
+##### `_length_cap` Field
 
 Negotiates the maximum [message envelope](#message-envelope) length. It is encoded the same way as the [ID cap negotiation field](#_id_cap).
 
@@ -278,20 +279,20 @@ There are other fields that are not always required for successful negotiation, 
 | `_allowed_modes` | list    |
 | `_fixed_length`  | map     |
 | `_padding`       | map     |
-| `_packed`        | boolean |
+| `_envelope`      | string  |
 | `_negotiation`   | boolean |
 | `_`              | any     |
 
-##### `_allowed_modes`
+##### `_allowed_modes` Field
 
 This field is a whitelist of negotiation modes that this peer supports. It may include any combination of:
 - `simple`
 - `yield`
 - `handshake`
 
-If this field is never negotiated, [`simple`] is assumed.
+If this field is never negotiated, the default of [`simple`] is assumed.
 
-##### `_fixed_length`
+##### `_fixed_length` Field
 
 This field negotiates the length of the fixed-length portion in message envelopes.
 
@@ -306,26 +307,29 @@ This field negotiates the length of the fixed-length portion in message envelope
 
 To defer to the other peer, choose `0` for proposed, and nonzero for `max`.
 
-* If this field is never negotiated, `0` is assumed for both values.
+* If this field is never negotiated, the default of `0` is assumed for both values.
 * If `max` is not present, it is assumed to be equal to `proposed`.
 
-#### `_padding`
+#### `_padding` Field
 
 Negotiates the multiple to which the `variable data` portion of all [message envelopes](#message-envelope) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length).
 
-#### `_packed`
+#### `_envelope` Field
 
-Negotiates whether [single or packed chunk envelopes](#single-and-packed-chunk-envelopes) will be used during the [application phase](#application-phase).
+Negotiates the [kind of envelope](#single-and-packed-chunk-envelopes) to use during the [application phase](#application-phase). The allowed values are:
 
-If this field is never negotiated, `false` (single chunk envelopes) is assumed.
+* `single`
+* `packed`
 
-#### `_negotiation`
+If this field is never negotiated, the default of `single` is assumed.
+
+#### `_negotiation` Field
 
 During [handshake negotiation](#handshake-mode), the presence of this field marks the end of negotiation, with a boolean value of `true` for successful negotiation.
 
 This field is unneeded and ignored in [simple](#simple-mode) and [yield](#yield-mode) modes, because success or failure is implied from the first (and only) message exchange.
 
-#### `_`
+#### `_` Field
 
 This optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to negotiation messages if encryption is used. The receiving peer must discard this field if encountered.
 
@@ -364,7 +368,7 @@ In packed chunk mode, the [`variable data`](#variable-data) field contains a ser
 
 Chunk length refers to the length of the `chunk payload`. It does not include the length of any other field.
 
-Padding, if present, must contain only zero bytes (0x00).
+Padding, if present, must contain only zero bytes (`0x00`).
 
 
 
@@ -380,17 +384,17 @@ If encryption is used, applications should be encouraged to structure their appl
 
 OOB messages are [single or packed mode message envelopes](#single-and-packed-chunk-envelopes) containing out-of-band data in their chunk payloads.
 
-The OOB payload is encoded as a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) inline map. An inlined map contains only the key-value pairs, not the "begin map" or "end container" markers. Fields are encoded as key-value pairs in this map.
+The OOB payload is encoded as a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) inline map. An inline map contains only the key-value pairs, not the "begin map" or "end container" markers. Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux. The following predefined fields are automatically recognized:
 
-#### `_oob`
+#### `_oob` Field
 
 The OOB field specifies the [OOB message type](#oob-message-types).
 
 This field is required in all OOB messages.
 
-#### `_`
+#### `_` Field
 
 This optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to OOB messages if encryption is used. The receiving peer must discard this field if encountered.
 
@@ -399,64 +403,66 @@ This optional filler field is available to aid in thwarting traffic analysis, an
 
 The following OOB message types must be present in Streamux based protocols. You are free to add other OOB message types needed by your protocol or add additional fields to existing types.
 
-#### `ping` Message
+Message types beginning with an underscore `_` are reserved for use by Streamux.
 
-The `ping` message requests a ping response from the peer. The response must be sent as soon as possible to aid in latency calculations.
+#### `_ping` Message
+
+The `_ping` message requests a ping response from the peer. The response must be sent as soon as possible to aid in latency calculations.
 
 Ping messages (and responses) must be sent at the highest priority.
 
-#### `alert` Message
+#### `_alert` Message
 
-An alert message informs the other peer of an important events regarding the session (such as warnings, errors, etc). This message should not be used to transport application level events.
+An `_alert` message informs the other peer of an important event regarding the session (such as warnings, errors, etc). This message should not be used to transport application level events.
 
 An alert message does not have a response.
 
 The alert message contains the following fields:
 
-##### `_message`
+##### `_message` Field
 
 A string containing the contents of the alert.
 
-##### `_severity`
+##### `_severity` Field
 
 A string containing the severity of the alert:
 
 * `error`: Something in the session layer is definitely incorrect or malfunctioning.
-* `warn`: Something may be incorrect or malfunctining in the session layer, or may not work as would normally be expected.
+* `warn`: Something may be incorrect or malfunctioning in the session layer, or may not work as would normally be expected.
 * `info`: Information that the other peer should know about. Use this sparingly.
-* `debug`: Never use this in production.
+* `debug`: Don't use this in production.
 
 Alert message priority is up to your protocol design. Error alerts should normally be given the highest priority to avoid potential data loss.
 
-#### `disconnect` Message
+#### `_disconnect` Message
 
-The disconnect message informs the other peer that we are ending the session and disconnecting. No furter messages may be sent after a disconnect message.
+The `_disconnect` message informs the other peer that we are ending the session and disconnecting. No further messages may be sent after a disconnect message.
 
 A disconnect message must be sent at the highest priority.
 
 A disconnect message does not have a response.
 
-#### `stop` Message
+#### `_stop` Message
 
-The stop message requests that the other peer stop sending application messages. It may still send OOB messages.
+The `_stop` message requests that the other peer stop sending application messages. It may still send OOB messages.
 
 A stop message must be sent at the highest priority.
 
 A stop message does not have a response.
 
-#### `start` Message
+#### `_start` Message
 
-The start message informs the other peer that it may begin sending application messages again.
+The `_start` message informs the other peer that it may begin sending application messages again.
 
 A start message must be sent at the highest priority.
 
 A start message does not have a response.
 
-#### `cancel` Message
+#### `_cancel` Message
 
-The cancel message requests that the other peer cancel an operation and acknowledge.
+The `_cancel` message requests that the other peer cancel an operation and acknowledge.
 
-While OOB and application messages normally allocate a new message ID, the cancel message re-uses the ID of the request it wants to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available message IDs are in flight).
+While OOB and application messages normally allocate a new request ID, the cancel message re-uses the ID of the request it wants to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available request IDs are in flight).
 
 Cancel requests and responses must be sent at the highest priority.
 
@@ -494,10 +500,10 @@ Padding is negotiated via the [`_padding` field](#_padding).
 
 A message chunk contains a portion of a message (or perhaps an entire message, if it's small enough), encoded as a chunk header and a payload.
 
-| Field        | Type   | Octets |
-| ------------ | ------ | ------ |
-| Chunk Header | varint |   1+   |
-| Payload      | bytes  |   *    |
+| Field         | Type   | Octets |
+| ------------- | ------ | ------ |
+| Chunk Header  | varint |   1+   |
+| Chunk Payload | bytes  |   *    |
 
 #### Chunk Header
 
@@ -532,17 +538,21 @@ The response bit is used to respond to a request sent by a peer. When set to `1`
 
 The termination bit indicates that this is the final chunk for this request ID (as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to `0` for all but the last chunk.
 
+#### Chunk Payload
+
+The chunk payload contains the actual message data, which is either an entire message, or part of one.
+
 
 ### Varpad Type
 
 Varpad is a padding mechanism that embeds the length of the padding within the padding itself. Varpad has a minimum length of 1 and no upper length limit.
 
-The varpad type contains a `length` field and a `zeroes` field:
+The varpad type contains a `length` field and a `zeros` field:
 
-    [length][zeroes]
+    [length][zeros]
 
 * The `length` field is encoded as a [varint](#varint-type), and is itself included in the length count.
-* The `zeroes` field fills out the padding to the desired length, and must be all zero bytes (0x00).
+* The `zeros` field fills out the padding to the desired length, and must be all zero bytes (`0x00`).
 
 Examples:
 
@@ -599,7 +609,7 @@ Some negotiation failures aren't necessarily fatal. Depending on your protocol d
 
 A `soft failure` means that a particular negotiation attempt failed, but, if the negotiation mode or protocol allows it, the peers may make another attempt, or choose an alternative.
 
-A `hard failure` is always considered unrecovarable. After a hard failure, the session is dead, and the peers should disconnect.
+A `hard failure` is always considered unrecoverable. After a hard failure, the session is dead, and the peers should disconnect.
 
 Note: Since `simple` and `yield` negotiation modes don't allow sending more than one negotiation message, all failures are hard failures in these modes.
 
@@ -624,7 +634,7 @@ With simple negotiation, both peers are equal in every way. Each peer sends only
 | T2   | (negotiation complete)       |      | (negotiation complete)                |
 |      | Messages                     | <==> | Messages                              |
 
-At `T1`, each peer sends an identifier and negotiation message. Peer X proposes `simple`. Peer Y proposes `passive` and accepts at least `simple`. Note that simple mode negotiation would also succeed if peer Y had proposed `simple` mode (see [Proposed Negotiation Mode](#_mode))
+At `T1`, each peer sends an identifier and negotiation message at the same time (the illustration merely shows the reality that one will be sent earlier than the other, even if only by a nanosecond). Peer X proposes `simple`. Peer Y proposes `passive` and accepts at least `simple`. Note that simple mode negotiation would also succeed if peer Y had proposed `simple` mode (see [Proposed Negotiation Mode](#_mode))
 
 At `T2`, each peer employs the "simple" negotiation algorithm and reaches the same conclusion (success or failure). There is therefore no need for any further negotiation messages.
 
@@ -648,9 +658,9 @@ The advantage of yield negotiation is that the initiator peer doesn't need to wa
 |      |                             | <=== | Response X                           |
 |      | Messages                    | <==> | Messages                             |
 
-At `T1`, the initiator peer proposes `yield`, and its accept list is ignored. The yielding peer proposes `passive`, and accepts at least `yield`. The initiator peer doesn't wait, and sends a request immediately, before either peer has had a chance to receive or evaluate the other's negotiate message.
+At `T1`, both peers send an identifier and negotiation message at the same time, like in simple mode. The initiator peer proposes `yield`, and its accept list is ignored. The yielding peer proposes `passive`, and accepts at least `yield`. The initiator peer doesn't wait for the other's negotiation message, and sends its first request immediately.
 
-At `T2`, both peers have received each other's negotiation message, and have run the identical negotiation algorithm to determine the result. If negotiation succeeds, the yielding peer will process the propsing peer's already sent request as normal. If negotiation fails, the request will neither be acted upon nor responded to because this is a [hard failure](#hard-and-soft-failures)
+At `T2`, both peers have received each other's negotiation message, and have run the identical negotiation algorithm to determine the result. If negotiation succeeds, the yielding peer will process the proposing peer's already sent request as normal. If negotiation fails, the request will neither be acted upon nor responded to because this is a [hard failure](#hard-and-soft-failures)
 
 
 #### Handshake Mode
@@ -659,7 +669,7 @@ With handshake negotiation, each peer sends negotiation messages in turn until a
 
 The contents of these negotiation messages depends on the needs of your protocol. The only requirement is that [certain information be present in the first negotiation message](#mandatory-negotiation-fields).
 
-Handshake negotiation is only considered complete when one of the peers includes the [negotiation field](#_negotiation) in a neogtiation message. What leads to this is entirely up to your protocol. If the receiving peer disagrees with the sending peer's assessment of the negotiation, it is a [hard failure](#hard-and-soft-failures).
+Handshake negotiation is only considered complete when one of the peers includes the [negotiation field](#_negotiation) in a negotiation message. What leads to this is entirely up to your protocol. If the receiving peer disagrees with the sending peer's assessment of the negotiation, it is a [hard failure](#hard-and-soft-failures).
 
 Handshake negotiation is particularly useful when incorporating encryption into your protocol.
 
@@ -678,14 +688,14 @@ Handshake negotiation is particularly useful when incorporating encryption into 
 | Tn+1 | (negotiation complete)          |      | (negotiation complete)                   |
 |      | Messages                        | <==> | Messages                                 |
 
-At `T1`, the initiator peer proposes `handshake`, and its accept list is ignored. It also includes all information necessary for the first handshake negotiation. The accepting peer sends only the most basic negotiation message, proposing `passive`, and accepting at least `handshake`.
+At `T1`, both peers send an identifier and initial negotiation message at the same time, like in simple mode. The initiator peer proposes `handshake`, and its accept list is ignored. It also includes all information necessary for the first handshake negotiation. The accepting peer sends only the most basic negotiation message, proposing `passive`, and accepting at least `handshake`.
 
 At `T2`, the peers have successfully negotiated to use `handshake` mode. The accepting peer sends a "corrected" first negotiation message, containing a response to the initiator peer's handshake parameters.
 
 At `T3`, the initiator peer evaluates the accepting peer's handshake message, and responds with another handshake message. This continues back and forth until one peer notifies the other that negotiation is complete using the [negotiation field](#_negotiation) (at `Tn`).
 
 
-### Identifier Message Negotiation
+### Identifier Negotiation
 
 The [identifier message](#identifier-message-encoding) must match exactly between peers, otherwise it is a [hard failure](#hard-and-soft-failures).
 
@@ -846,20 +856,20 @@ Application Phase
 
 Once both peers are in agreement that negotiation has completed successfully, the application phase begins.
 
-Application and OOB messages are given their own message ID during their [flight time](#message-flight), and are split into multiple chunks if they are too large to fit in a single chunk. A multi-chunk message has its `termination` field cleared to `0` for all but the last chunk.
+Application and OOB messages are given their own request ID during their [flight time](#message-flight), and are split into multiple chunks if they are too large to fit in a single chunk. A multi-chunk message has its `termination` field cleared to `0` for all but the last chunk.
 
 The request ID is scoped to its sender. If both peers send a request with the same ID, they are considered to be distinct, and don't conflict with each other. A response message inverts the scope: A peer responds to a request by putting in its response message the same request ID it received from the requesting peer, and setting the `response` bit to `1`.
 
 Message chunks with the same ID must be sent in-order (chunk 5 of request ID 42 must not be sent before chunk 4 of request ID 42). The message is considered complete once the `termination` field is set. Note that this does not require you to send all chunks for one message before sending chunks from another message. Chunks from different messages can be sent interleaved, like so:
 
-* Message ID 10, chunk 0
-* Message ID 11, chunk 0
-* Message ID 12, chunk 0
-* Message ID 11, chunk 1
-* Message ID 10, chunk 1 (termination = true)
-* Message ID 11, chunk 2
-* Message ID 12, chunk 1 (termination = true)
-* Message ID 11, chunk 3 (termination = true)
+* Request ID 10, chunk 0
+* Request ID 11, chunk 0
+* Request ID 12, chunk 0
+* Request ID 11, chunk 1
+* Request ID 10, chunk 1 (termination = true)
+* Request ID 11, chunk 2
+* Request ID 12, chunk 1 (termination = true)
+* Request ID 11, chunk 3 (termination = true)
 
 Your choice of message chunk sizing and scheduling will depend on your use case.
 
@@ -886,7 +896,7 @@ Out of Band Messages
 
 Out of band (OOB) messages are used for management of the protocol and session itself rather than for communication with the application (although they may affect the application's behavior). 
 
-Because they affect the session itself, OOB messages have different requirements from application messages. The underlying system must be capable of sending OOB messages at a higher priority than any application message, athough not all OOB messages will necessarily require such a high priority.
+Because they affect the session itself, OOB messages have different requirements from application messages. OOB message contents are encoded in a [particular way](#oob-message-encoding), and the underlying system must be capable of sending OOB messages at a higher priority than any application message (although not all OOB messages will necessarily require such a high priority).
 
 
 ### Request Cancellation
