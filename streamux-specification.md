@@ -57,8 +57,8 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Cancel Message](#_cancel-message)
     * [Message Envelope](#message-envelope)
         * [Envelope Length](#envelope-length)
-        * [Fixed Data](#fixed-data)
-        * [Variable Data](#variable-data)
+        * [Fixed Length Data](#fixed-length-data)
+        * [Variable Length Data](#variable-length-data)
         * [Padding](#padding)
     * [Message Chunk](#message-chunk)
         * [Chunk Header](#chunk-header)
@@ -116,7 +116,7 @@ Streamux is designed as a point-to-point, bidirectional protocol foundation for 
 |          session management         |  |
 |    request tracking & cancellation  |  |
 |             packetization           |  |
-|          encryption support         |  |
+|     encryption structural support   |  |
 |             multiplexing            |  |
 +-------------------------------------+ /
 
@@ -306,13 +306,17 @@ To defer to the other peer, choose `0` for proposed, and nonzero for `max`.
 * If this field is never negotiated, the default of `0` is assumed for both values.
 * If `max` is not present, it is assumed to be equal to `proposed`.
 
+Once fixed length has been negotiated, all future messages (including negotiation messages) must include a fixed data field of the specified length.
+
 #### `_padding` Field
 
 Negotiates the multiple to which the `variable data` portion of all [message envelopes](#message-envelope) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length-field).
 
+Once padding has been negotiated, all future messages (including negotiation messages) must be padded to the amount negotiated.
+
 #### `_envelope` Field
 
-Negotiates the [kind of envelope](#single-and-packed-chunk-envelopes) to use during the [application phase](#application-phase). The allowed values are:
+Negotiates the [kind of chunk envelope](#single-and-packed-chunk-envelopes) to use during the [application phase](#application-phase). The allowed values are:
 
 * `single`
 * `packed`
@@ -332,13 +336,13 @@ This optional filler field is available to aid in thwarting traffic analysis, an
 
 ### Single and Packed Chunk Envelopes
 
-Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The envelope mode is negotiated once for the entire session, and the encoding is slightly different depending on the mode.
+Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The chunk envelope mode is [negotiated once for the entire session](#_envelope-field), and the encoding is slightly different depending on the mode.
 
 The default mode if not negotiated is single chunk mode.
 
 #### Single Chunk Envelope Mode
 
-In single chunk mode, the [`variable data`](#variable-data) field contains a [chunk header](#chunk-header) and a chunk payload.
+In single chunk mode, the [`variable data`](#variable-data) field contains a [chunk header](#chunk-header) and a chunk payload containing a chunk of an application-specific message.
 
 | Field         | Type   | Octets |
 | ------------- | ------ | ------ |
@@ -347,7 +351,7 @@ In single chunk mode, the [`variable data`](#variable-data) field contains a [ch
 
 #### Packed Chunk Envelope Mode
 
-In packed chunk mode, the [`variable data`](#variable-data) field contains a series of message chunks prefixed with a length field:
+In packed chunk mode, the [`variable data`](#variable-data) field contains a series of message chunks, each prefixed with a length field:
 
 | Field         | Type   | Octets | Notes                  |
 | ------------- | ------ | ------ | ---------------------- |
@@ -384,7 +388,7 @@ Map keys may be of any type, but all string typed keys beginning with an undersc
 
 The OOB field specifies the [OOB message type](#oob-message-types).
 
-This field is required in all OOB messages.
+This field is mandatory in all OOB messages.
 
 #### `_` Field
 
@@ -463,22 +467,22 @@ Cancel requests and responses must be sent at the highest priority.
 
 The message envelope consists of a length field, followed by possible fixed data, and then the remaining data, whose composition depends on the message type.
 
-| Field           | Type   | Octets | Notes                                          |
-| --------------- | ------ | ------ | ---------------------------------------------- |
-| Envelope Length | varint |   1+   |                                                |
-| Fixed Data      | bytes  |   *    | Length 0 until otherwise negotiated            |
-| Variable Data   | bytes  |   *    |                                                |
-| Padding         | varpad |   1+   | Only present if [padding is enabled](#padding) |
+| Field                | Type   | Octets | Notes                                                 |
+| -------------------- | ------ | ------ | ----------------------------------------------------- |
+| Envelope Length      | varint |   1+   |                                                       |
+| Fixed Length Data    | bytes  |   *    | Length 0 until otherwise negotiated                   |
+| Variable Length Data | bytes  |   *    |                                                       |
+| Padding              | varpad |   1+   | Only present if [padding is enabled](#_padding-field) |
 
 #### Envelope Length
 
 This is the byte length of the entire message envelope (including the length field itself). Envelope length is encoded as a [varint](#varint-type).
 
-#### Fixed Data
+#### Fixed Length Data
 
-The `fixed data` field has a length of `0` until otherwise negotiated. Once [fixed data length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed data` field of the selected length. The contents of the `fixed data` field are protocol-specific, and beyond the scope of this document.
+The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed data length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document.
 
-#### Variable Data
+#### Variable Length Data
 
 This is the envelope's main payload. Most commonly, it will contain a [message chunk](#message-chunk).
 
@@ -486,7 +490,7 @@ This is the envelope's main payload. Most commonly, it will contain a [message c
 
 The padding field is of type [varpad](https://github.com/kstenerud/varpad), and pads the `variable data` field to bring its length to a multiple of the padding amount.
 
-Padding is negotiated via the [`_padding` field](#_padding-field).
+The padding amount is negotiated via the [`_padding` field](#_padding-field).
 
 
 ### Message Chunk
