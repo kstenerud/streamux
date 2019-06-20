@@ -538,25 +538,49 @@ The chunk payload contains the actual message data, which is either an entire me
 
 ### Varint Type
 
-A `varint` is an unsigned integer encoding scheme developed by [Google](https://developers.google.com/protocol-buffers/docs/encoding) that encodes a value into a sequence of bytes where the lower 7 bits contain data and the high bit is used as a "continuation" bit. A decoder reads encoded bytes, filling a decoded unsigned integer 7 bits at a time in little endian order, until it encounters a byte with the high "continuation" bit cleared.
+Varint is an unsigned integer encoding scheme developed by [Google](https://developers.google.com/protocol-buffers/docs/encoding) that encodes a value into a sequence of bytes where the lower 7 bits contain data and the high bit is used as a "continuation" bit. A decoder reads encoded bytes, filling a decoded unsigned integer 7 bits at a time in little endian order, until it encounters a byte with the high "continuation" bit cleared.
 
-##### Example: Decoding a varint from the sequence `[05 0f 4a e4 aa]`
+#### Example: Encoding the value 2000000 to a varint
 
-Since the first byte (`05`) has the high bit cleared, we are done, and the value is 5. The remaining 4 bytes are not part of the varint.
+Get the binary representation:
 
-##### Example: Decoding a varint from the sequence `[b4 d2 5a 91 ff]`
+    2000000 = 0x1e8480 = 0001 1110 1000 0100 1000 0000
 
-Separate the continuation bits from the data bits:
+Arrange into groups of 7 bits:
+
+    000 1111010 0001001 0000000
+
+Drop the highest group if it's all zero bits:
+
+    1111010 0001001 0000000
+
+Add a continuation bit to all but the highest group:
+
+    (0) 1111010  (1) 0001001  (1) 0000000
+       01111010     10001001     10000000
+           0x7a         0x89         0x80
+
+Store in little endian order:
+
+    [80 89 7a]
+
+#### Example: Decoding a varint from the sequence `[05 0f 4a e4 aa]`
+
+Byte 0 (0x05) has the high bit cleared, so we are done. The value is 5, and the bytes following it (`[0f 4a e4 aa]`) are not part of the varint.
+
+#### Example: Decoding a varint from the sequence `[b4 d2 5a 91 ff]`
+
+##### Separate the continuation bits from the data bits:
 
 | Byte 0        | Byte 1        | Byte 2        |
 | ------------- | ------------- | ------------- |
-| `0xb4`        | `0xd2`        | `0x5a`        |
-| `10110100`    | `11010010`    | `01011010`    |
+|        `0xb4` |        `0xd2` |        `0x5a` |
+|    `10110100` |    `11010010` |    `01011010` |
 | `1` `0110100` | `1` `1010010` | `0` `1011010` |
 
-Byte 2 (`0x5a`) has its high bit cleared, so the bytes following it (`[91 ff]`) are not part of the varint.
+Byte 2 (0x5a) has its high bit cleared, so the bytes following it (`[91 ff]`) are not part of the varint.
 
-The 7-bit groups are concatenated in little endian order:
+##### Concatenate the 7-bit groups in little endian order:
 
     Byte 2     Byte 1     Byte 0
     1011010 ++ 1010010 ++ 0110100
