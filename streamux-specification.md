@@ -67,7 +67,6 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
             * [Response Bit](#response-bit)
             * [Termination Bit](#termination-bit)
         * [Chunk Payload](#chunk-payload)
-    * [Varpad Type](#varpad-type)
     * [Varint Type](#varint-type)
 * [Negotiation Phase](#negotiation-phase)
     * [Hard and Soft Failures](#hard-and-soft-failures)
@@ -209,18 +208,15 @@ The Streamux version is currently 1.
 
 ### Negotiation Message Encoding
 
-A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) inline map in the `variable data` section. An inline map contains only the key-value pairs, not the "begin map" or "end container" markers. Fields are encoded as key-value pairs in this map.
+A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) map in the `variable data` section. Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
-If [padding](#padding) is enabled, it is placed before the negotiation fields as a [varpad](#varpad-type).
-
 Contents of [`variable data`](#variable-data):
 
-| Field              | Type       | Octets | Notes                                          |
-| ------------------ | ---------- | ------ | ---------------------------------------------- |
-| Padding            | varpad     |   1+   | Only present if [padding is enabled](#padding) |
-| Negotiation Fields | inline map |   *    |                                                |
+| Field              | Type    | Octets |
+| ------------------ | ------- | ------ |
+| Negotiation Fields | CBE map |   *    |
 
 
 #### Mandatory Negotiation Fields
@@ -342,33 +338,29 @@ The default mode if not negotiated is single chunk mode.
 
 #### Single Chunk Envelope Mode
 
-In single chunk mode, the [`variable data`](#variable-data) field contains possible [padding](#padding) as a [varpad](#varpad-type), a [chunk header](#chunk-header), and a chunk payload.
+In single chunk mode, the [`variable data`](#variable-data) field contains a [chunk header](#chunk-header) and a chunk payload.
 
-| Field         | Type   | Octets | Notes                                          |
-| ------------- | ------ | ------ | ---------------------------------------------- |
-| Padding       | varpad |   1+   | Only present if [padding is enabled](#padding) |
-| Chunk Header  | varint |   1+   |                                                |
-| Chunk Payload | bytes  |   *    |                                                |
+| Field         | Type   | Octets |
+| ------------- | ------ | ------ |
+| Chunk Header  | varint |   1+   |
+| Chunk Payload | bytes  |   *    |
 
 #### Packed Chunk Envelope Mode
 
-In packed chunk mode, the [`variable data`](#variable-data) field contains a series of message chunks, with any required [padding](#padding) added as zero bytes at the end:
+In packed chunk mode, the [`variable data`](#variable-data) field contains a series of message chunks prefixed with a length field:
 
-| Field         | Type   | Octets | Notes                                          |
-| ------------- | ------ | ------ | ---------------------------------------------- |
-| Chunk Length  | varint |   1+   |                                                |
-| Chunk Header  | varint |   1+   |                                                |
-| Chunk Payload | bytes  |   *    |                                                |
-|               |        |        |                                                |
-| Chunk Length  | varint |   1+   |                                                |
-| Chunk Header  | varint |   1+   |                                                |
-| Chunk Payload | bytes  |   *    |                                                |
-| ...           | ...    |  ...   |                                                |
-| Padding       | bytes  |   *    | Only present if [padding is enabled](#padding) |
+| Field         | Type   | Octets | Notes                  |
+| ------------- | ------ | ------ | ---------------------- |
+| Chunk Length  | varint |   1+   | Length of payload only |
+| Chunk Header  | varint |   1+   |                        |
+| Chunk Payload | bytes  |   *    |                        |
+|               |        |        |                        |
+| Chunk Length  | varint |   1+   | Length of payload only |
+| Chunk Header  | varint |   1+   |                        |
+| Chunk Payload | bytes  |   *    |                        |
+| ...           | ...    |  ...   |                        |
 
 Chunk length refers to the length of the `chunk payload`. It does not include the length of any other field.
-
-Padding, if present, must contain only zero bytes (`0x00`).
 
 
 
@@ -471,11 +463,12 @@ Cancel requests and responses must be sent at the highest priority.
 
 The message envelope consists of a length field, followed by possible fixed data, and then the remaining data, whose composition depends on the message type.
 
-| Field           | Type   | Octets | Notes                           |
-| --------------- | ------ | ------ | ------------------------------- |
-| Envelope Length | varint |   1+   |                                 |
-| Fixed Data      | bytes  |   *    | Length 0 until negotiated       |
-| Variable Data   | bytes  |   *    |                                 |
+| Field           | Type   | Octets | Notes                                          |
+| --------------- | ------ | ------ | ---------------------------------------------- |
+| Envelope Length | varint |   1+   |                                                |
+| Fixed Data      | bytes  |   *    | Length 0 until otherwise negotiated            |
+| Variable Data   | bytes  |   *    |                                                |
+| Padding         | varpad |   1+   | Only present if [padding is enabled](#padding) |
 
 #### Envelope Length
 
@@ -487,11 +480,11 @@ The `fixed data` field has a length of `0` until otherwise negotiated. Once [fix
 
 #### Variable Data
 
-This is the envelope's main payload. Most commonly, it will contain a [message chunk](#message-chunk) and possibly padding.
+This is the envelope's main payload. Most commonly, it will contain a [message chunk](#message-chunk).
 
 #### Padding
 
-Padding is always applied to the `variable data` field of a message envelope to bring its length to a multiple of the padding amount. Where the padding is placed, and what type of padding is used, is specific to the message type contained in the envelope.
+The padding field is of type [varpad](https://github.com/kstenerud/varpad), and pads the `variable data` field to bring its length to a multiple of the padding amount.
 
 Padding is negotiated via the [`_padding` field](#_padding-field).
 
@@ -541,29 +534,6 @@ The termination bit indicates that this is the final chunk for this request ID (
 #### Chunk Payload
 
 The chunk payload contains the actual message data, which is either an entire message, or part of one.
-
-
-### Varpad Type
-
-Varpad is a padding mechanism that embeds the length of the padding within the padding itself. Varpad has a minimum length of 1 and no upper length limit.
-
-The varpad type contains a `length` field and a `zeros` field:
-
-    [length][zeros]
-
-* The `length` field is encoded as a [varint](#varint-type), and is itself included in the length count.
-* The `zeros` field fills out the padding to the desired length, and must be all zero bytes (`0x00`).
-
-Examples:
-
-| Sequence            | Result               |
-| ------------------- | -------------------- |
-| `01`                | 1 byte of padding    |
-| `02 00`             | 2 bytes of padding   |
-| `03 00 00`          | 3 bytes of padding   |
-| `fd 02`, `00` x 379 | 381 bytes of padding |
-
-The minimum length is 1 because the length field itself requires at least 1 byte to encode. You can work around this restriction with a flag somewhere else in your encoding that determines whether the varpad field will be present or not.
 
 
 ### Varint Type
