@@ -208,15 +208,15 @@ The Streamux version is currently 1.
 
 ### Negotiation Message Encoding
 
-A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) map in the `variable data` section. Fields are encoded as key-value pairs in this map.
+A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers) in the `variable data` section. Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
 Contents of [`variable data`](#variable-data):
 
-| Field              | Type    | Octets |
-| ------------------ | ------- | ------ |
-| Negotiation Fields | CBE map |   *    |
+| Field              | Type           | Octets |
+| ------------------ | -------------- | ------ |
+| Negotiation Fields | CBE inline map |   *    |
 
 
 #### Mandatory Negotiation Fields
@@ -376,7 +376,7 @@ If encryption is used, applications should be encouraged to structure their appl
 
 OOB messages are [single or packed mode message envelopes](#single-and-packed-chunk-envelopes) containing out-of-band data in their chunk payloads.
 
-The OOB payload is encoded as a [Concise Binary Encoding, version 1](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md) inline map. An inline map contains only the key-value pairs, not the "begin map" or "end container" markers. Fields are encoded as key-value pairs in this map.
+The OOB payload is encoded as a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux. The following predefined fields are automatically recognized:
 
