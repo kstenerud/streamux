@@ -360,6 +360,8 @@ In packed chunk mode, the [`variable length data`](#variable-length-data) field 
 
 Chunk payload length refers to the length of the `chunk payload` only. It does not include the length of any other field.
 
+Care must be taken in the implementation of packed chunk envelope mode. Messages of different priorities might be handled differently during message queuing (for example, they might take a different communication channel), in which case they should not be packed together. Packed chunk envelopes must not be buffered for too long waiting to be filled. Packing message chunks comes at the cost of increased latency.
+
 
 
 ### Application Message Encoding
