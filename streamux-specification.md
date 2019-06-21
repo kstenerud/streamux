@@ -242,11 +242,11 @@ The Protocol field contains the identifier and version of the proposed protocol 
 
 `_id` uniquely identifies the protocol that will be used on top of this protocol.
 
-`_version` is a string following [Semantic Versioning 2.0.0](https://semver.org/). `MAJOR` version changes indicate a backwards incompatible change, and so only the `MAJOR` portion is considered when deciding compatibility between peers. `MINOR` and `PATCH` information are only used for diagnostic and debugging purposes.
+`_version` is a string identifying the version of the protocol to use. Ideally, the version string should follow [Semantic Versioning 2.0.0](https://semver.org/), where only `MAJOR` version changes indicate a backwards incompatible change. If a semantic version is detected, only the `MAJOR` version must match (`MINOR` and `PATCH` are for diagnostic and debugging purposes only). If the version string is not a semantic version, then the entire string must match.
 
 ##### `_id_cap` Field
 
-Negotiates the maximum allowed ID value (ID cap) in messages, implying the maximum number of messages that may be [in-flight](#message-flight) at a time during this session. An ID cap of 0 effectively means that there can be only one message in-flight at a time.
+Negotiates the maximum allowed ID value (ID cap) in messages, implying the maximum number of messages that may be [in-flight](#message-flight) at a time during this session. An ID cap of 0 effectively means that there can be only one message (with ID 0) in-flight at any time.
 
 | Field       | Type         | Meaning                                              |
 | ----------- | ------------ | ---------------------------------------------------- |
