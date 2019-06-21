@@ -208,15 +208,9 @@ The Streamux version is currently 1.
 
 ### Negotiation Message Encoding
 
-A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers) in the `variable length data` section. Fields are encoded as key-value pairs in this map.
+A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers) in the [`variable length data`](#variable-length-data) section. Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
-
-Contents of [`variable length data`](#variable-length-data):
-
-| Field              | Type           | Octets |
-| ------------------ | -------------- | ------ |
-| Negotiation Fields | CBE inline map |   *    |
 
 
 #### Mandatory Negotiation Fields
