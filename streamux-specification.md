@@ -94,6 +94,8 @@ Use Case
 
 Streamux is designed as a point-to-point, bidirectional protocol foundation for you to build a messaging layer on top of. It handles the middle parts which tend to operate in a similar way in most stream oriented protocols. Think of it as a protocol construction kit.
 
+Streamux is designed to support encryption, minimizing or providing mitigations for repetitive known data patterns so as to defend against known-plaintext and traffic analysis attacks.
+
 ```
 +-------------------------------------+
 |             application             |
@@ -131,8 +133,6 @@ Streamux is designed as a point-to-point, bidirectional protocol foundation for 
 +-------------------------------------+
 ```
 
-Streamux is designed to support encryption, minimizing or providing mitigations for repetitive known data patterns so as to defend against known-plaintext and traffic analysis attacks.
-
 
 
 General Operation
@@ -145,8 +145,7 @@ The negotiation phase begins with each peer sending an identifier message, follo
 | Peer X        | Peer Y        |
 | ------------- | ------------- |
 |               | Identifier    |
-|               | Negotiate     |
-| Identifier    |               |
+| Identifier    | Negotiate     |
 | Negotiate     |               |
 | Request A     |               |
 | Request B     | Response A    |
