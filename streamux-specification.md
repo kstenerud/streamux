@@ -36,7 +36,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
             * [Allowed Modes Field](#_allowed_modes-field)
             * [Fixed Length Field](#_fixed_length-field)
             * [Padding Field](#_padding-field)
-            * [Envelope Field](#_envelope-field)
+            * [Envelope Mode Field](#_envelope_mode-field)
             * [Negotiation Field](#_negotiation-field)
             * [`_` Field](#_-field)
     * [Single and Packed Chunk Envelopes](#single-and-packed-chunk-envelopes)
@@ -82,7 +82,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
     * [Negotiation Examples](#negotiation-examples)
 * [Application Phase](#application-phase)
     * [Message Flight](#message-flight)
-    * [Empty Response](#empty-response)
+        * [No-Response Messages](#no-response-messages)
 * [Out Of Band Messages](#out-of-band-messages)
     * [Request Cancellation](#request-cancellation)
 * [Spurious Messages](#spurious-messages)
@@ -275,7 +275,7 @@ There are other fields that are not always required for successful negotiation, 
 | `_allowed_modes` | list    |
 | `_fixed_length`  | map     |
 | `_padding`       | map     |
-| `_envelope`      | string  |
+| `_envelope_mode` | string  |
 | `_negotiation`   | boolean |
 | `_`              | any     |
 
@@ -314,9 +314,9 @@ Negotiates the multiple to which the `variable length data` portion of all [mess
 
 Once padding has been negotiated, all future messages (including negotiation messages) must be padded to the amount negotiated.
 
-#### `_envelope` Field
+#### `_envelope_mode` Field
 
-Negotiates the [kind of chunk envelope](#single-and-packed-chunk-envelopes) to use during the [application phase](#application-phase). The allowed values are:
+Negotiates [how to chunk data in a message envelope](#single-and-packed-chunk-envelopes) during the [application phase](#application-phase). The allowed values are:
 
 * `single`
 * `packed`
@@ -336,7 +336,7 @@ This optional filler field is available to aid in thwarting traffic analysis, an
 
 ### Single and Packed Chunk Envelopes
 
-Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The chunk envelope mode is [negotiated once for the entire session](#_envelope-field), and the encoding is slightly different depending on the mode.
+Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The chunk envelope mode is [negotiated once for the entire session](#_envelope_mode-field), and the encoding is slightly different depending on the mode.
 
 The default mode if not negotiated is single chunk mode.
 
@@ -353,18 +353,18 @@ In single chunk mode, the [`variable length data`](#variable-length-data) field 
 
 In packed chunk mode, the [`variable length data`](#variable-length-data) field contains a series of message chunks, each prefixed with a length field:
 
-| Field         | Type   | Octets | Notes                  |
-| ------------- | ------ | ------ | ---------------------- |
-| Chunk Length  | varint |   1+   | Length of payload only |
-| Chunk Header  | varint |   1+   |                        |
-| Chunk Payload | bytes  |   *    |                        |
-|               |        |        |                        |
-| Chunk Length  | varint |   1+   | Length of payload only |
-| Chunk Header  | varint |   1+   |                        |
-| Chunk Payload | bytes  |   *    |                        |
-| ...           | ...    |  ...   |                        |
+| Field                | Type   | Octets | Notes                  |
+| -------------------- | ------ | ------ | ---------------------- |
+| Chunk Payload Length | varint |   1+   | Length of payload only |
+| Chunk Header         | varint |   1+   |                        |
+| Chunk Payload        | bytes  |   *    |                        |
+|                      |        |        |                        |
+| Chunk Payload Length | varint |   1+   | Length of payload only |
+| Chunk Header         | varint |   1+   |                        |
+| Chunk Payload        | bytes  |   *    |                        |
+| ...                  | ...    |  ...   |                        |
 
-Chunk length refers to the length of the `chunk payload`. It does not include the length of any other field.
+Chunk payload length refers to the length of the `chunk payload` only. It does not include the length of any other field.
 
 
 
@@ -380,7 +380,7 @@ If encryption is used, applications should be encouraged to structure their appl
 
 OOB messages are [single or packed mode message envelopes](#single-and-packed-chunk-envelopes) containing out-of-band data in their chunk payloads.
 
-The OOB payload is encoded as a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
+The payload of an OOB message is encoded as a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux. The following predefined fields are automatically recognized:
 
@@ -530,6 +530,8 @@ A value of `1` marks this as an [out of band message](#out-of-band-messages).
 ##### Response Bit
 
 The response bit is used to respond to a request sent by a peer. When set to `1`, the ID field refers to the ID of the original request sent by the requesting peer (scope is inverted).
+
+Note: A response message with no chunk payload (empty response) signals successful completion of the request, with no other data to report.
 
 ##### Termination Bit
 
@@ -878,14 +880,18 @@ Every application and OOB message must be assigned a unique ID that will remain 
 
 An "in-flight" ID cannot be re-used in other messages until its message cycle has completed (either it has been responded to, or it has been canceled and we have received a cancel response).
 
-If a particular message type doesn't require a response, its ID is returned to the ID pool immediately after being sent. Such messages must be explicitly defined in your protocol to not require a response.
+#### No-Response Messages
 
-Note: Messages that don't require a response cannot be canceled. Choose carefully when designing your protocol.
+Messages may be designated in your protocol to not require a response. A "no-response" message is a request that is either guaranteed to succeed, or something that the requesting side will never care about the result of.
 
+Upon sending a "no-response" message, its ID is returned to the ID pool immediately after being sent. This also means that "no-response" messages cannot be canceled. Choose carefully when designing your protocol.
 
-### Empty Response
+The following OOB message types are identified as "no-response" in Streamux (any additional "no-response" message types must be explicitly identified in your protocol specification):
 
-An `empty response` is an application or OOB response message containing no data. `empty response` signals successful completion of the request, with no other data to report.
+* [Alert](#_alert-message)
+* [Disconnect](#_disconnect-message)
+* [Stop](#_stop-message)
+* [Start](#_start-message)
 
 
 
@@ -900,6 +906,8 @@ Because they affect the session itself, OOB messages have different requirements
 ### Request Cancellation
 
 There are times when a requesting peer might want to cancel a request-in-progress. Circumstances may change, or the operation may be taking too long, or the ID pool may be exhausted. A requesting peer may cancel an outstanding request by sending a [cancel message](#_cancel-message), citing the request ID of the request to be canceled.
+
+Note: ["no-response" messages](#no-response-messages) cannot be canceled.
 
 Upon receiving a cancel request, the receiving peer must immediately clear all response message chunks with the specified ID from its send queue, abort any in-progress operations the original request with that ID triggered, and send a cancel response at the highest priority.
 
