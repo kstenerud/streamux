@@ -876,11 +876,11 @@ An "in-flight" ID cannot be re-used in other messages until its message cycle ha
 
 #### No-Response Messages
 
-Messages may be designated in your protocol to not require a response. A "no-response" message is a request that is either guaranteed to succeed, or something that the requesting side will never care about the result of.
+Messages may be designated in your protocol to not require a response. A "no-response" message is a request that is both guaranteed to succeed, and something that the requesting side will never care about the result of.
 
 Upon sending a "no-response" message, its ID is returned to the ID pool immediately after being sent. This also means that "no-response" messages cannot be canceled. Choose carefully when designing your protocol.
 
-The following OOB message types are identified as "no-response" in Streamux (any additional "no-response" message types must be explicitly identified in your protocol specification):
+The following message types must be identified as "no-response" in Streamux based protocols:
 
 * [Alert](#_alert-message)
 * [Disconnect](#_disconnect-message)
