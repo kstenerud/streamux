@@ -67,7 +67,6 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
             * [Response Bit](#response-bit)
             * [Termination Bit](#termination-bit)
         * [Chunk Payload](#chunk-payload)
-    * [VLQ Type](#vlq-type)
 * [Negotiation Phase](#negotiation-phase)
     * [Hard and Soft Failures](#hard-and-soft-failures)
     * [Negotiation Modes](#negotiation-modes)
@@ -339,7 +338,7 @@ In single chunk mode, the [`variable length data`](#variable-length-data) field 
 
 | Field         | Type  | Octets |
 | ------------- | ----- | ------ |
-| Chunk Header  | vlq   |   1+   |
+| Chunk Header  | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |
 | Chunk Payload | bytes |   *    |
 
 #### Packed Chunk Envelope Mode
@@ -348,12 +347,12 @@ In packed chunk mode, the [`variable length data`](#variable-length-data) field 
 
 | Field                | Type  | Octets | Notes                  |
 | -------------------- | ----- | ------ | ---------------------- |
-| Chunk Payload Length | vlq   |   1+   | Length of payload only |
-| Chunk Header         | vlq   |   1+   |                        |
+| Chunk Payload Length | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | Length of payload only |
+| Chunk Header         | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |                        |
 | Chunk Payload        | bytes |   *    |                        |
 |                      |       |        |                        |
-| Chunk Payload Length | vlq   |   1+   | Length of payload only |
-| Chunk Header         | vlq   |   1+   |                        |
+| Chunk Payload Length | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | Length of payload only |
+| Chunk Header         | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |                        |
 | Chunk Payload        | bytes |   *    |                        |
 | ...                  | ...   |  ...   |                        |
 
@@ -464,14 +463,14 @@ The message envelope consists of a length field, followed by possible fixed leng
 
 | Field                | Type   | Octets | Notes                                                 |
 | -------------------- | ------ | ------ | ----------------------------------------------------- |
-| Envelope Length      | vlq    |   1+   |                                                       |
+| Envelope Length      | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
 | Fixed Length Data    | bytes  |   *    | Length 0 until otherwise negotiated                   |
 | Variable Length Data | bytes  |   *    |                                                       |
-| Padding              | varpad |   1+   | Only present if [padding is enabled](#_padding-field) |
+| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
 
 #### Envelope Length
 
-This is the byte length of the entire message envelope (including the length field itself). Envelope length is encoded as a [VLQ](#vlq-type).
+This is the byte length of the entire message envelope (including the length field itself). Envelope length is encoded as a [VLQ unsigned integer](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md).
 
 #### Fixed Length Data
 
@@ -483,7 +482,7 @@ This is the envelope's main payload. Most commonly, it will contain a [message c
 
 #### Padding
 
-The padding field is of type [varpad](https://github.com/kstenerud/varpad), and pads the `variable length data` field to bring its length to a multiple of the padding amount.
+The padding field is of type [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md), and pads the `variable length data` field to bring its length to a multiple of the padding amount.
 
 The padding amount is negotiated via the [`_padding` field](#_padding-field).
 
@@ -494,12 +493,12 @@ A message chunk contains a portion of a message (or perhaps an entire message, i
 
 | Field         | Type  | Octets |
 | ------------- | ----- | ------ |
-| Chunk Header  | vlq   |   1+   |
+| Chunk Header  | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |
 | Chunk Payload | bytes |   *    |
 
 #### Chunk Header
 
-The `chunk header` is a [VLQ](#vlq-type) encoded unsigned integer containing bit-encoded subfields:
+The `chunk header` is a [VLQ unsigned integer](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) encoded unsigned integer containing bit-encoded subfields:
 
 | Field       | Bits | Bit Order |
 | ----------- | ---- | --------- |
@@ -535,78 +534,6 @@ The termination bit indicates that this is the final chunk for this request ID (
 #### Chunk Payload
 
 The chunk payload contains the actual message data, which is either an entire message, or part of one.
-
-
-### VLQ Type
-
-VLQ (Variable Length Quantity) is an unsigned integer encoding scheme designed for the MIDI file format. It encodes a value into a sequence of bytes where the lower 7 bits contain data and the high bit is used as a "continuation" bit. A decoder reads encoded bytes, filling a decoded unsigned integer 7 bits at a time in big endian order, until it encounters a byte with the high "continuation" bit cleared.
-
-### Example: Encoding the value 2000000 to a VLQ
-
-Get the binary representation:
-
-    2000000 = 0x1e8480 = 0001 1110 1000 0100 1000 0000
-
-Arrange into groups of 7 bits:
-
-    000 1111010 0001001 0000000
-
-Drop the highest group if it's all zero bits:
-
-    1111010 0001001 0000000
-
-Add a continuation bit to all but the lowest group:
-
-    (1) 1111010  (1) 0001001  (0) 0000000
-       11111010     10001001     00000000
-           0xfa         0x89         0x00
-
-Store in big endian order:
-
-    [fa 89 00]
-
-### Example: Decoding a VLQ from the sequence `[05 0f 4a e4 aa]`
-
-Byte 0 (0x05) has the high bit cleared, so we are done. The value is 5, and the bytes following it (`[0f 4a e4 aa]`) are not part of the VLQ.
-
-### Example: Decoding a VLQ from the sequence `[b4 d2 5a 91 ff]`
-
-#### Separate the continuation bits from the data bits:
-
-| Byte 0        | Byte 1        | Byte 2        |
-| ------------- | ------------- | ------------- |
-|        `0xb4` |        `0xd2` |        `0x5a` |
-|    `10110100` |    `11010010` |    `01011010` |
-| `1` `0110100` | `1` `1010010` | `0` `1011010` |
-
-Byte 2 (0x5a) has its high bit cleared, so the bytes following it (`[91 ff]`) are not part of the VLQ.
-
-#### Concatenate the 7-bit groups in big endian order:
-
-    Byte 0     Byte 1     Byte 2
-    0110100 ++ 1010010 ++ 1011010
-    = 011010010100101011010
-    = 01101 00101001 01011010
-    =  0x0d     0x29     0x5a
-    = 0x0d295a
-
-### Why not Varint?
-
-The most popular variable length unsigned integer encoding today is in [Google's Protocol Buffers](https://developers.google.com/protocol-buffers/docs/encoding), which stores the encoded bytes in little endian order. Streamux uses VLQ instead because its big endian ordering allows for progressive decoding of values. For example:
-
-Received buffers: `[b4 d2]`, `[5a 91 ff]`
-
-Since the encoded integer spans two received buffers, you cannot decode it in one shot. When the bytes are encoded in big endian order, you can simply continue the decoding algorithm in the next buffer:
-
-    value = (value << 7) | (next_byte&0x7f)
-
-In this case:
-
-    After buffer 0, byte 0: 0x34
-    After buffer 0, byte 1: 0x1a52
-    After buffer 1, byte 0: 0x0d295a
-
-If the bytes were in little endian order, you couldn't do this, and would instead have to store all of the encoded bytes in a temporary buffer first.
 
 
 
