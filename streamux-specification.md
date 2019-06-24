@@ -29,6 +29,7 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
     * [Message Envelope Encoding](#message-envelope-encoding)
         * [Envelope Length](#envelope-length)
         * [Fixed Length Data](#fixed-length-data)
+        * [Padding](#padding)
         * [Variable Length Data](#variable-length-data)
     * [Negotiation Message Encoding](#negotiation-message-encoding)
         * [Mandatory Negotiation Fields](#mandatory-negotiation-fields)
@@ -52,7 +53,6 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
             * [Response Bit](#response-bit)
             * [Termination Bit](#termination-bit)
         * [Chunk Payload](#chunk-payload)
-        * [Padding](#padding)
     * [Application Message Encoding](#application-message-encoding)
     * [OOB Message Encoding](#oob-message-encoding)
         * [OOB Field](#_oob-field)
@@ -220,6 +220,7 @@ All non-identifier messages are contained in a message envelope. A message envel
 | -------------------- | ------ | ------ | ----------------------------------------------------- |
 | Envelope Length      | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
 | Fixed Length Data    | bytes  |   *    | Length 0 until otherwise negotiated                   |
+| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
 | Variable Length Data | bytes  |   *    |                                                       |
 
 #### Envelope Length
@@ -228,7 +229,15 @@ This is the byte length of the entire message envelope (including the length fie
 
 #### Fixed Length Data
 
-The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document. However, all unused bytes in this field must be set to `0`.
+The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document. However, all unused bytes in this field must be cleared to `0`.
+
+#### Padding
+
+The padding field pads the `variable length data` field to bring its length to a multiple of the [padding amount](#_padding-field).
+
+Padding, [if enabled](#_padding-field), must always be applied to every message, even if the `variable length data` field is already a multiple of the padding amount without it. This is because the length of the padding is [contained within the padding itself](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md#encoding-process). You'll actually save space, however, since this removes the need for a payload length field, which would likely be larger than 1 byte.
+
+Padding is placed before the `variable length data` to make progressive message decoding possible.
 
 #### Variable Length Data
 
@@ -237,14 +246,7 @@ This is the envelope's main payload. Its contents depend on the message type.
 
 ### Negotiation Message Encoding
 
-A negotiation message is a [message envelope](#message-envelope-encoding) whose [`variable length data`](#variable-length-data) section contains possible padding, and a negotiation payload. [Padding](#padding) is placed up front to make progressive message decoding possible.
-
-| Field               | Type  | Octets | Notes |
-| ------------------- | ----- | ------ | ----- |
-| Padding             | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
-| Negotiation Payload | bytes |   *    |       |
-
-The negotiation payload is a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
+A negotiation message is a [message envelope](#message-envelope-encoding) whose [`variable length data`](#variable-length-data) section is a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
@@ -376,11 +378,10 @@ The default envelope mode if not negotiated is single chunk envelope mode.
 
 #### Single Chunk Envelope Mode
 
-In single chunk mode, the [`variable length data`](#variable-length-data) field contains possible [padding](#padding), a [chunk header](#chunk-header) and a chunk payload containing all or part of a message. [Padding](#padding) is placed up front to make progressive message decoding possible.
+In single chunk mode, the [`variable length data`](#variable-length-data) field contains a [chunk header](#chunk-header) and a chunk payload containing all or part of a message.
 
 | Field         | Type  | Octets | Notes |
 | ------------- | ----- | ------ | ----- |
-| Padding       | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
 | Chunk Header  | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
 | Chunk Payload | bytes |   *    |       |
 
@@ -390,7 +391,6 @@ In packed chunk mode, the [`variable length data`](#variable-length-data) field 
 
 | Field                | Type  | Octets | Notes                  |
 | -------------------- | ----- | ------ | ---------------------- |
-| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   *    | Only present if [padding is enabled](#_padding-field) |
 | Chunk Payload Length | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | Length of payload only |
 | Chunk Header         | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |                        |
 | Chunk Payload        | bytes |   *    |                        |
@@ -404,7 +404,7 @@ Chunk payload length refers to the length of the `chunk payload` only. It does n
 
 Care must be taken in the implementation of packed chunk envelope mode. Messages of different priorities might be handled differently during message queuing (for example, they might take a different communication channel), in which case they should not be packed together. Packed chunk envelopes must not be buffered for too long waiting to be filled. In packing message chunks, you are trading latency for throughput.
 
-Packed chunk envelope mode only makes sense when padding or fixed data is enabled. Otherwise, single chunk mode will always pack smaller.
+Packed chunk envelope mode only makes sense when [padding](#_padding-field) or [fixed data](#_fixed_length-field) is enabled. Otherwise, single chunk mode will always pack smaller.
 
 
 #### Chunk Header
@@ -446,13 +446,6 @@ The termination bit indicates that this is the final chunk for this request ID (
 #### Chunk Payload
 
 The chunk payload contains the actual message data, which is either an entire message, or part of one.
-
-
-#### Padding
-
-The padding field is of type [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md), and pads the `variable length data` field to bring its length to a multiple of the [padding amount](#_padding-field).
-
-Padding, [if enabled](#_padding-field), must always be applied to every message, even if the `variable length data` field is already a multiple of the padding amount without it. This is because the length of the padding is [contained within the padding itself](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md#encoding-process). You won't waste space, however, since this removes the need for a payload length field, which would likely be larger than 1 byte.
 
 
 
