@@ -26,6 +26,10 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
     * [Out of Band Message](#out-of-band-message)
 * [Message Encoding](#message-encoding)
     * [Identifier Message Encoding](#identifier-message-encoding)
+    * [Message Envelope Encoding](#message-envelope-encoding)
+        * [Envelope Length](#envelope-length)
+        * [Fixed Length Data](#fixed-length-data)
+        * [Variable Length Data](#variable-length-data)
     * [Negotiation Message Encoding](#negotiation-message-encoding)
         * [Mandatory Negotiation Fields](#mandatory-negotiation-fields)
             * [Mode Field](#_mode-field)
@@ -39,9 +43,16 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
             * [Envelope Mode Field](#_envelope_mode-field)
             * [Negotiation Field](#_negotiation-field)
             * [`_` Field](#_-field)
-    * [Single and Packed Chunk Envelopes](#single-and-packed-chunk-envelopes)
+    * [Application and OOB Message Envelopes](#application-and-oob-message-envelopes)
         * [Single Chunk Envelope Mode](#single-chunk-envelope-mode)
         * [Packed Chunk Envelope Mode](#packed-chunk-envelope-mode)
+        * [Chunk Header](#chunk-header)
+            * [Request ID](#request-id)
+            * [OOB Bit](#oob-bit)
+            * [Response Bit](#response-bit)
+            * [Termination Bit](#termination-bit)
+        * [Chunk Payload](#chunk-payload)
+        * [Padding](#padding)
     * [Application Message Encoding](#application-message-encoding)
     * [OOB Message Encoding](#oob-message-encoding)
         * [OOB Field](#_oob-field)
@@ -55,18 +66,6 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Stop Message](#_stop-message)
         * [Start Message](#_start-message)
         * [Cancel Message](#_cancel-message)
-    * [Message Envelope](#message-envelope)
-        * [Envelope Length](#envelope-length)
-        * [Fixed Length Data](#fixed-length-data)
-        * [Variable Length Data](#variable-length-data)
-        * [Padding](#padding)
-    * [Message Chunk](#message-chunk)
-        * [Chunk Header](#chunk-header)
-            * [Request ID](#request-id)
-            * [OOB Bit](#oob-bit)
-            * [Response Bit](#response-bit)
-            * [Termination Bit](#termination-bit)
-        * [Chunk Payload](#chunk-payload)
 * [Negotiation Phase](#negotiation-phase)
     * [Hard and Soft Failures](#hard-and-soft-failures)
     * [Negotiation Modes](#negotiation-modes)
@@ -92,8 +91,6 @@ Use Case
 --------
 
 Streamux is designed as a point-to-point, bidirectional protocol foundation for you to build a messaging layer on top of. It handles the middle parts which tend to operate in a similar way in most stream oriented protocols. Think of it as a protocol construction kit.
-
-Streamux is designed to support encryption, minimizing or providing mitigations for repetitive known data patterns so as to defend against known-plaintext and traffic analysis attacks.
 
 ```
 +-------------------------------------+
@@ -132,6 +129,11 @@ Streamux is designed to support encryption, minimizing or providing mitigations 
 +-------------------------------------+
 ```
 
+Streamux is designed to support encryption, minimizing or providing mitigations for repetitive known data patterns so as to defend against known-plaintext and traffic analysis attacks.
+
+Note that protocols based on Streamux are not required to support all features of Streamux. Your protocol must support at least one [negotiation mode](#negotiation-modes), one [message chunk envelope mode](#application-and-oob-message-envelopes), and you can leave out [fixed length data](#fixed-length-data) and [padding](#padding) if your protocol doesn't need them.
+
+
 
 
 General Operation
@@ -139,7 +141,13 @@ General Operation
 
 There are two main phases to a Streamux session: the negotiation phase and the application phase.
 
-The negotiation phase begins with each peer sending an identifier message, followed by at least one negotiation message. Communication in the negotiation phase is synchronous after the first negotiation message, and becomes asynchronous when the phase ends. Once negotiation has successfully completed, the application phase begins. A typical session might look something like this:
+The negotiation phase begins with each peer sending an identifier message, followed by at least one negotiation message. Each peer sends these two initial messages unprompted, and then reads the identifier and first negotiation message that were sent by the other peer.
+
+Negotiation may end after these initial messages, or may continue as a further series of synchronous negotiation messages, depending on the [negotiation mode](#negotiation-modes).
+
+Once negotiation ends, the application phase begins, at which point all communication is asynchronous.
+
+A typical session might look something like this:
 
 | Peer X        | Peer Y        |
 | ------------- | ------------- |
@@ -184,7 +192,7 @@ OOB messages are also sent over the course of the application phase, but are res
 Message Encoding
 ----------------
 
-All messages except for the identifier message are encoded into a [message envelope](#message-envelope).
+All messages except for the identifier message are encoded into a [message envelope](#message-envelope-encoding).
 
 
 ### Identifier Message Encoding
@@ -204,9 +212,39 @@ The 5-byte identifier `STRMX` identifies this as a Streamux negotiation message.
 The Streamux version is currently 1.
 
 
+### Message Envelope Encoding
+
+All non-identifier messages are contained in a message envelope. A message envelope consists of a length field, followed by possible fixed length data, and then the (possibly padded) remaining data, whose composition depends on the underlying message type.
+
+| Field                | Type   | Octets | Notes                                                 |
+| -------------------- | ------ | ------ | ----------------------------------------------------- |
+| Envelope Length      | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
+| Fixed Length Data    | bytes  |   *    | Length 0 until otherwise negotiated                   |
+| Variable Length Data | bytes  |   *    |                                                       |
+
+#### Envelope Length
+
+This is the byte length of the entire message envelope (including the length field itself).
+
+#### Fixed Length Data
+
+The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document. However, all unused bytes in this field must be set to `0`.
+
+#### Variable Length Data
+
+This is the envelope's main payload. Its contents depend on the message type.
+
+
 ### Negotiation Message Encoding
 
-A negotiation message is a [message envelope](#message-envelope) containing a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers) in the [`variable length data`](#variable-length-data) section. Fields are encoded as key-value pairs in this map.
+A negotiation message is a [message envelope](#message-envelope-encoding) whose [`variable length data`](#variable-length-data) section contains possible padding, and a negotiation payload. [Padding](#padding) is placed up front to make progressive message decoding possible.
+
+| Field               | Type  | Octets | Notes |
+| ------------------- | ----- | ------ | ----- |
+| Padding             | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
+| Negotiation Payload | bytes |   *    |       |
+
+The negotiation payload is a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux.
 
@@ -255,7 +293,7 @@ Negotiates the maximum allowed ID value (ID cap) in messages, implying the maxim
 
 ##### `_length_cap` Field
 
-Negotiates the maximum [message envelope](#message-envelope) length. It is encoded the same way as the [ID cap negotiation field](#_id_cap-field).
+Negotiates the maximum [message envelope](#message-envelope-encoding) length. It is encoded the same way as the [ID cap negotiation field](#_id_cap-field).
 
 
 #### Optional Negotiation Fields
@@ -302,13 +340,15 @@ Once fixed length has been negotiated, all future messages (including negotiatio
 
 #### `_padding` Field
 
-Negotiates the multiple to which the `variable length data` portion of all [message envelopes](#message-envelope) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length-field).
+Negotiates the multiple to which the `variable length data` portion of all [message envelopes](#message-envelope-encoding) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length-field).
 
-Once padding has been negotiated, all future messages (including negotiation messages) must be padded to the amount negotiated.
+Once padding has been negotiated to a value greater than `1`, all future messages (including negotiation messages) must be padded to the amount negotiated.
+
+If this field is never negotiated, the default of `0` (no padding) is assumed.
 
 #### `_envelope_mode` Field
 
-Negotiates [how to chunk data in a message envelope](#single-and-packed-chunk-envelopes) during the [application phase](#application-phase). The allowed values are:
+Negotiates [how to chunk data in a message envelope](#application-and-oob-message-envelopes) during the [application phase](#application-phase). The allowed values are:
 
 * `single`
 * `packed`
@@ -326,20 +366,23 @@ This field is unneeded and ignored in [simple](#simple-mode) and [yield](#yield-
 This optional filler field is available to aid in thwarting traffic analysis, and implementations are encouraged to add a random amount of "filler" data to negotiation messages if encryption is used. The receiving peer must discard this field if encountered.
 
 
-### Single and Packed Chunk Envelopes
+### Application and OOB Message Envelopes
 
-Message envelopes for application and OOB messages can contain either a single or multiple [message chunks](#message-chunk). The chunk envelope mode is [negotiated once for the entire session](#_envelope_mode-field), and the encoding is slightly different depending on the mode.
+The [variable length data](#variable-length-data) section of the message envelope for application and OOB messages can be encapsulated by a single chunk or a packed chunk envelope, depending on [which mode was negotiated for the current session](#_envelope_mode-field).
 
-The default mode if not negotiated is single chunk mode.
+A protocol based on Streamux is not required to support both modes.
+
+The default envelope mode if not negotiated is single chunk envelope mode.
 
 #### Single Chunk Envelope Mode
 
-In single chunk mode, the [`variable length data`](#variable-length-data) field contains a [chunk header](#chunk-header) and a chunk payload containing a chunk of an application-specific message.
+In single chunk mode, the [`variable length data`](#variable-length-data) field contains possible [padding](#padding), a [chunk header](#chunk-header) and a chunk payload containing all or part of a message. [Padding](#padding) is placed up front to make progressive message decoding possible.
 
-| Field         | Type  | Octets |
-| ------------- | ----- | ------ |
-| Chunk Header  | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |
-| Chunk Payload | bytes |   *    |
+| Field         | Type  | Octets | Notes |
+| ------------- | ----- | ------ | ----- |
+| Padding       | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
+| Chunk Header  | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
+| Chunk Payload | bytes |   *    |       |
 
 #### Packed Chunk Envelope Mode
 
@@ -347,6 +390,7 @@ In packed chunk mode, the [`variable length data`](#variable-length-data) field 
 
 | Field                | Type  | Octets | Notes                  |
 | -------------------- | ----- | ------ | ---------------------- |
+| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   *    | Only present if [padding is enabled](#_padding-field) |
 | Chunk Payload Length | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | Length of payload only |
 | Chunk Header         | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |                        |
 | Chunk Payload        | bytes |   *    |                        |
@@ -358,13 +402,63 @@ In packed chunk mode, the [`variable length data`](#variable-length-data) field 
 
 Chunk payload length refers to the length of the `chunk payload` only. It does not include the length of any other field.
 
-Care must be taken in the implementation of packed chunk envelope mode. Messages of different priorities might be handled differently during message queuing (for example, they might take a different communication channel), in which case they should not be packed together. Packed chunk envelopes must not be buffered for too long waiting to be filled. Packing message chunks comes at the cost of increased latency.
+Care must be taken in the implementation of packed chunk envelope mode. Messages of different priorities might be handled differently during message queuing (for example, they might take a different communication channel), in which case they should not be packed together. Packed chunk envelopes must not be buffered for too long waiting to be filled. In packing message chunks, you are trading latency for throughput.
+
+Packed chunk envelope mode only makes sense when padding or fixed data is enabled. Otherwise, single chunk mode will always pack smaller.
+
+
+#### Chunk Header
+
+The `chunk header` is a [VLQ encoded](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) unsigned integer containing bit-encoded subfields:
+
+| Field       | Bits | Bit Order |
+| ----------- | ---- | --------- |
+| Request ID  | 4+   | High Bit  |
+| OOB         | 1    |           |
+| Response    | 1    |           |
+| Termination | 1    | Low Bit   |
+
+##### Request ID
+
+The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still [in-flight](#message-flight). The requesting peer must not re-use IDs that are currently in-flight.
+
+Request IDs are scoped to the requesting peer. For example, request ID 22 from peer A is distinct from request ID 22 from peer B.
+
+The [ID cap field](#_id_cap-field) determines the maximum allowed value of this field for the current session.
+
+Note: The first chosen request ID in the session should be unpredictable in order to make known-plaintext attacks more difficult (see [RFC 1750](https://tools.ietf.org/html/rfc1750)).
+
+##### OOB Bit
+
+A value of `1` marks this as an [out of band message](#out-of-band-messages).
+
+##### Response Bit
+
+The response bit is used to respond to a request sent by a peer. When set to `1`, the ID field refers to the ID of the original request sent by the requesting peer (scope is inverted).
+
+Note: A response message with no chunk payload (empty response) signals successful completion of the request, with no other data to report.
+
+##### Termination Bit
+
+The termination bit indicates that this is the final chunk for this request ID (as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to `0` for all but the last chunk.
+
+
+#### Chunk Payload
+
+The chunk payload contains the actual message data, which is either an entire message, or part of one.
+
+
+#### Padding
+
+The padding field is of type [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md), and pads the `variable length data` field to bring its length to a multiple of the [padding amount](#_padding-field).
+
+Padding, [if enabled](#_padding-field), must always be applied to every message, even if the `variable length data` field is already a multiple of the padding amount without it. This is because the length of the padding is [contained within the padding itself](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md#encoding-process). You won't waste space, however, since this removes the need for a payload length field, which would likely be larger than 1 byte.
 
 
 
 ### Application Message Encoding
 
-Application messages are [single or packed mode message envelopes](#single-and-packed-chunk-envelopes) containing application-specific data in their chunk payloads.
+Application messages are [single or packed mode message envelopes](#application-and-oob-message-envelopes) containing application-specific data in their chunk payloads.
 
 If encryption is used, applications should be encouraged to structure their application data to support filler data, which can aid in thwarting traffic analysis.
 
@@ -372,9 +466,11 @@ If encryption is used, applications should be encouraged to structure their appl
 
 ### OOB Message Encoding
 
-OOB messages are [single or packed mode message envelopes](#single-and-packed-chunk-envelopes) containing out-of-band data in their chunk payloads.
+OOB messages are [single or packed mode message envelopes](#application-and-oob-message-envelopes) containing out-of-band data in their chunk payloads.
 
-The payload of an OOB message is encoded as a [Concise Binary Encoding, version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
+The payload of an OOB message is encoded as a [Concise Binary Encoding (CBE), version 1 inline map](https://github.com/kstenerud/concise-encoding/blob/master/cbe-specification.md#inline-containers). Fields are encoded as key-value pairs in this map.
+
+If an OOB message becomes large enough to require chunking, the chunks will contain parts of one CBE document (not one CBE document per chunk).
 
 Map keys may be of any type, but all string typed keys beginning with an underscore `_` are reserved for use by Streamux. The following predefined fields are automatically recognized:
 
@@ -455,85 +551,6 @@ The `_cancel` message requests that the other peer cancel an operation and ackno
 While OOB and application messages normally allocate a new request ID, the cancel message re-uses the ID of the request it wants to cancel. This ensures that cancel messages can still be sent even during ID exhaustion (where all available request IDs are in flight).
 
 Cancel requests and responses must be sent at the highest priority.
-
-
-### Message Envelope
-
-The message envelope consists of a length field, followed by possible fixed length data, and then the (possibly padded) remaining data, whose composition depends on the message type.
-
-| Field                | Type   | Octets | Notes                                                 |
-| -------------------- | ------ | ------ | ----------------------------------------------------- |
-| Envelope Length      | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
-| Fixed Length Data    | bytes  |   *    | Length 0 until otherwise negotiated                   |
-| Variable Length Data | bytes  |   *    |                                                       |
-| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
-
-#### Envelope Length
-
-This is the byte length of the entire message envelope (including the length field itself). Envelope length is encoded as a [VLQ unsigned integer](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md).
-
-#### Fixed Length Data
-
-The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document. However, all unused bytes in this field must be set to `0`.
-
-#### Variable Length Data
-
-This is the envelope's main payload. Most commonly, it will contain a [message chunk](#message-chunk).
-
-#### Padding
-
-The padding field is of type [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md), and pads the `variable length data` field to bring its length to a multiple of the padding amount.
-
-The padding amount is negotiated via the [`_padding` field](#_padding-field).
-
-
-### Message Chunk
-
-A message chunk contains a portion of a message (or perhaps an entire message, if it's small enough), encoded as a chunk header and a payload.
-
-| Field         | Type  | Octets |
-| ------------- | ----- | ------ |
-| Chunk Header  | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ |
-| Chunk Payload | bytes |   *    |
-
-#### Chunk Header
-
-The `chunk header` is a [VLQ unsigned integer](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) encoded unsigned integer containing bit-encoded subfields:
-
-| Field       | Bits | Bit Order |
-| ----------- | ---- | --------- |
-| Request ID  | 4+   | High Bit  |
-| OOB         | 1    |           |
-| Response    | 1    |           |
-| Termination | 1    | Low Bit   |
-
-##### Request ID
-
-The request ID field is a unique number that is generated by the requesting peer to differentiate the current request from other requests that are still [in-flight](#message-flight). The requesting peer must not re-use IDs that are currently in-flight.
-
-Request IDs are scoped to the requesting peer. For example, request ID 22 from peer A is distinct from request ID 22 from peer B.
-
-The [ID cap field](#_id_cap-field) determines the maximum allowed value of this field for the current session.
-
-Note: The first chosen request ID in the session should be unpredictable in order to make known-plaintext attacks more difficult (see [RFC 1750](https://tools.ietf.org/html/rfc1750)).
-
-##### OOB Bit
-
-A value of `1` marks this as an [out of band message](#out-of-band-messages).
-
-##### Response Bit
-
-The response bit is used to respond to a request sent by a peer. When set to `1`, the ID field refers to the ID of the original request sent by the requesting peer (scope is inverted).
-
-Note: A response message with no chunk payload (empty response) signals successful completion of the request, with no other data to report.
-
-##### Termination Bit
-
-The termination bit indicates that this is the final chunk for this request ID (as a request message or as a response message). For a large message that spans multiple chunks, you would clear this to `0` for all but the last chunk.
-
-#### Chunk Payload
-
-The chunk payload contains the actual message data, which is either an entire message, or part of one.
 
 
 
@@ -826,7 +843,7 @@ Messages may be designated in your protocol to not require a response. A "no-res
 
 Upon sending a "no-response" message, its ID is returned to the ID pool immediately after being sent. This also means that "no-response" messages cannot be canceled. Choose carefully when designing your protocol.
 
-The following message types must be identified as "no-response" in Streamux based protocols:
+The following message types must be marked as "no-response" in Streamux based protocols:
 
 * [Alert](#_alert-message)
 * [Disconnect](#_disconnect-message)
