@@ -33,16 +33,16 @@ A minimalist, asynchronous, multiplexing, request-response protocol.
         * [Variable Length Data](#variable-length-data)
     * [Negotiation Message Encoding](#negotiation-message-encoding)
         * [Mandatory Negotiation Fields](#mandatory-negotiation-fields)
-            * [Mode Field](#_mode-field)
-            * [Protocol Field](#_protocol-field)
-            * [ID Cap Field](#_id_cap-field)
-            * [Length Cap Field](#_length_cap-field)
+            * [Mode Negotiation Field](#_mode-negotiation-field)
+            * [Protocol Negotiation Field](#_protocol-negotiation-field)
+            * [ID Cap Negotiation Field](#_id_cap-negotiation-field)
+            * [Length Cap Negotiation Field](#_length_cap-negotiation-field)
         * [Optional Negotiation Fields](#optional-negotiation-fields)
-            * [Allowed Modes Field](#_allowed_modes-field)
-            * [Fixed Length Field](#_fixed_length-field)
-            * [Padding Field](#_padding-field)
-            * [Envelope Mode Field](#_envelope_mode-field)
-            * [Negotiation Field](#_negotiation-field)
+            * [Allowed Modes Negotiation Field](#_allowed_modes-negotiation-field)
+            * [Fixed Length Negotiation Field](#_fixed_length-negotiation-field)
+            * [Padding Negotiation Field](#_padding-negotiation-field)
+            * [Envelope Mode Negotiation Field](#_envelope_mode-negotiation-field)
+            * [Negotiation Completion Field](#_negotiation-completion-field)
             * [`_` Field](#_-field)
     * [Application and OOB Message Envelopes](#application-and-oob-message-envelopes)
         * [Single Chunk Envelope Mode](#single-chunk-envelope-mode)
@@ -220,7 +220,7 @@ All non-identifier messages are contained in a message envelope. A message envel
 | -------------------- | ------ | ------ | ----------------------------------------------------- |
 | Envelope Length      | [VLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) | 1+ | |
 | Fixed Length Data    | bytes  |   *    | Length 0 until otherwise negotiated                   |
-| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-field) |
+| Padding              | [varpad](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md) |   1+   | Only present if [padding is enabled](#_padding-negotiation-field) |
 | Variable Length Data | bytes  |   *    |                                                       |
 
 #### Envelope Length
@@ -229,13 +229,13 @@ This is the byte length of the entire message envelope (including the length fie
 
 #### Fixed Length Data
 
-The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed length](#_fixed_length-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document. However, all unused bytes in this field must be cleared to `0`.
+The `fixed length data` field has a length of `0` until otherwise negotiated. Once [fixed length](#_fixed_length-negotiation-field) has been successfully negotiated to a value greater than `0`, all future message envelopes must contain a `fixed length data` field of the selected length. The contents of the `fixed length data` field are protocol-specific, and beyond the scope of this document. However, all unused bytes in this field must be cleared to `0`.
 
 #### Padding
 
-The padding field pads the `variable length data` field to bring its length to a multiple of the [padding amount](#_padding-field).
+The padding field pads the `variable length data` field to bring its length to a multiple of the [padding amount](#_padding-negotiation-field).
 
-Padding, [if enabled](#_padding-field), must always be applied to every message, even if the `variable length data` field is already a multiple of the padding amount without it. This is because the length of the padding is [contained within the padding itself](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md#encoding-process). You'll actually save space, however, since this removes the need for a payload length field, which would likely be larger than 1 byte.
+Padding, [if enabled](#_padding-negotiation-field), must always be applied to every message, even if the `variable length data` field is already a multiple of the padding amount without it. This is because the length of the padding is [contained within the padding itself](https://github.com/kstenerud/varpad/blob/master/varpad-specification.md#encoding-process). You'll actually save space, however, since this removes the need for a payload length field, which would likely be larger than 1 byte.
 
 Padding is placed before the `variable length data` to make progressive message decoding possible.
 
@@ -262,7 +262,7 @@ The first negotiation message sent by each peer must contain at least the follow
 | `_id_cap`     | map    | Maximum allowable ID value     |
 | `_length_cap` | map    | Maximum allowable length value |
 
-##### `_mode` Field
+##### `_mode` Negotiation Field
 
 The proposed negotiation mode must be one of:
 - `passive`
@@ -270,7 +270,7 @@ The proposed negotiation mode must be one of:
 - `yield`
 - `handshake`
 
-##### `_protocol` Field
+##### `_protocol` Negotiation Field
 
 The Protocol field contains the identifier and version of the proposed protocol to be overlaid on top of Streamux:
 
@@ -283,7 +283,7 @@ The Protocol field contains the identifier and version of the proposed protocol 
 
 `_version` is a string identifying the version of the protocol to use. Ideally, the version string should follow [Semantic Versioning 2.0.0](https://semver.org/), where only `MAJOR` version changes indicate a backwards incompatible change. If a semantic version is detected, only the `MAJOR` version must match (`MINOR` and `PATCH` are for diagnostic and debugging purposes only). If the version string is not a semantic version, then the entire string must match.
 
-##### `_id_cap` Field
+##### `_id_cap` Negotiation Field
 
 Negotiates the maximum allowed ID value (ID cap) in messages, implying the maximum number of messages that may be [in-flight](#message-flight) at a time during this session. An ID cap of 0 effectively means that there can be only one message (with ID 0) in-flight at any time.
 
@@ -293,9 +293,9 @@ Negotiates the maximum allowed ID value (ID cap) in messages, implying the maxim
 | `_max`      | unsigned int | Minimum cap allowed by this peer                     |
 | `_proposed` | signed int   | Proposed cap to the other peer (negative = wildcard) |
 
-##### `_length_cap` Field
+##### `_length_cap` Negotiation Field
 
-Negotiates the maximum [message envelope](#message-envelope-encoding) length. It is encoded the same way as the [ID cap negotiation field](#_id_cap-field).
+Negotiates the maximum [message envelope](#message-envelope-encoding) length. It is encoded the same way as the [ID cap negotiation field](#_id_cap-negotiation-field).
 
 
 #### Optional Negotiation Fields
@@ -311,7 +311,7 @@ There are other fields that are not always required for successful negotiation, 
 | `_negotiation`   | boolean |
 | `_`              | any     |
 
-##### `_allowed_modes` Field
+##### `_allowed_modes` Negotiation Field
 
 This field is a whitelist of negotiation modes that this peer supports. It may include any combination of:
 - `simple`
@@ -320,7 +320,7 @@ This field is a whitelist of negotiation modes that this peer supports. It may i
 
 If this field is never negotiated, the default of [`simple`] is assumed.
 
-##### `_fixed_length` Field
+##### `_fixed_length` Negotiation Field
 
 This field negotiates the length of the fixed-length portion in message envelopes.
 
@@ -340,15 +340,15 @@ To defer to the other peer, choose `0` for proposed, and nonzero for `max`.
 
 Once fixed length has been negotiated, all future messages (including negotiation messages) must include a fixed length data field of the specified length.
 
-#### `_padding` Field
+#### `_padding` Negotiation Field
 
-Negotiates the multiple to which the `variable length data` portion of all [message envelopes](#message-envelope-encoding) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length-field).
+Negotiates the multiple to which the `variable length data` portion of all [message envelopes](#message-envelope-encoding) must be [padded](#padding). This field is encoded in the same way as the [fixed length negotiation field](#_fixed_length-negotiation-field).
 
 Once padding has been negotiated to a value greater than `1`, all future messages (including negotiation messages) must be padded to the amount negotiated.
 
 If this field is never negotiated, the default of `0` (no padding) is assumed.
 
-#### `_envelope_mode` Field
+#### `_envelope_mode` Negotiation Field
 
 Negotiates [how to chunk data in a message envelope](#application-and-oob-message-envelopes) during the [application phase](#application-phase). The allowed values are:
 
@@ -357,7 +357,7 @@ Negotiates [how to chunk data in a message envelope](#application-and-oob-messag
 
 If this field is never negotiated, the default of `single` is assumed.
 
-#### `_negotiation` Field
+#### `_negotiation` Completion Field
 
 During [handshake negotiation](#handshake-mode), the presence of this field marks the end of negotiation, with a boolean value of `true` for successful negotiation.
 
@@ -370,7 +370,7 @@ This optional filler field is available to aid in thwarting traffic analysis, an
 
 ### Application and OOB Message Envelopes
 
-The [variable length data](#variable-length-data) section of the message envelope for application and OOB messages can be encapsulated by a single chunk or a packed chunk envelope, depending on [which mode was negotiated for the current session](#_envelope_mode-field).
+The [variable length data](#variable-length-data) section of the message envelope for application and OOB messages can be encapsulated by a single chunk or a packed chunk envelope, depending on [which mode was negotiated for the current session](#_envelope_mode-negotiation-field).
 
 A protocol based on Streamux is not required to support both modes.
 
@@ -404,7 +404,7 @@ Chunk payload length refers to the length of the `chunk payload` only. It does n
 
 Care must be taken in the implementation of packed chunk envelope mode. Messages of different priorities might be handled differently during message queuing (for example, they might take a different communication channel), in which case they should not be packed together. Packed chunk envelopes must not be buffered for too long waiting to be filled. In packing message chunks, you are trading latency for throughput.
 
-Packed chunk envelope mode only makes sense when [padding](#_padding-field) or [fixed data](#_fixed_length-field) is enabled. Otherwise, single chunk mode will always pack smaller.
+Packed chunk envelope mode only makes sense when [padding](#_padding-negotiation-field) or [fixed data](#_fixed_length-negotiation-field) is enabled. Otherwise, single chunk mode will always pack smaller.
 
 
 #### Chunk Header
@@ -424,7 +424,7 @@ The request ID field is a unique number that is generated by the requesting peer
 
 Request IDs are scoped to the requesting peer. For example, request ID 22 from peer A is distinct from request ID 22 from peer B.
 
-The [ID cap field](#_id_cap-field) determines the maximum allowed value of this field for the current session.
+The [ID cap field](#_id_cap-negotiation-field) determines the maximum allowed value of this field for the current session.
 
 Note: The first chosen request ID in the session should be unpredictable in order to make known-plaintext attacks more difficult (see [RFC 1750](https://tools.ietf.org/html/rfc1750)).
 
@@ -584,7 +584,7 @@ With simple negotiation, both peers are equal in every way. Each peer sends only
 | T2   | (negotiation complete)       |      | (negotiation complete)                |
 |      | Messages                     | <==> | Messages                              |
 
-At `T1`, each peer sends an identifier and negotiation message at the same time (the illustration merely shows the reality that one will be sent earlier than the other, even if only by a nanosecond). Peer X proposes `simple`. Peer Y proposes `passive` and accepts at least `simple`. Note that simple mode negotiation would also succeed if peer Y had proposed `simple` mode (see [Proposed Negotiation Mode](#_mode-field))
+At `T1`, each peer sends an identifier and negotiation message at the same time (the illustration merely shows the reality that one will be sent earlier than the other, even if only by a nanosecond). Peer X proposes `simple`. Peer Y proposes `passive` and accepts at least `simple`. Note that simple mode negotiation would also succeed if peer Y had proposed `simple` mode (see [Proposed Negotiation Mode](#_mode-negotiation-field))
 
 At `T2`, each peer employs the "simple" negotiation algorithm and reaches the same conclusion (success or failure). There is therefore no need for any further negotiation messages.
 
@@ -619,7 +619,7 @@ With handshake negotiation, each peer sends negotiation messages in turn until a
 
 The contents of these negotiation messages depends on the needs of your protocol. The only requirement is that [certain information be present in the first negotiation message](#mandatory-negotiation-fields).
 
-Handshake negotiation is only considered complete when one of the peers includes the [negotiation field](#_negotiation-field) in a negotiation message. What leads to this is entirely up to your protocol. If the receiving peer disagrees with the sending peer's assessment of the negotiation, it is a [hard failure](#hard-and-soft-failures).
+Handshake negotiation is only considered complete when one of the peers includes the [negotiation field](#_negotiation-completion-field) in a negotiation message. What leads to this is entirely up to your protocol. If the receiving peer disagrees with the sending peer's assessment of the negotiation, it is a [hard failure](#hard-and-soft-failures).
 
 Handshake negotiation is particularly useful when incorporating encryption into your protocol.
 
@@ -642,7 +642,7 @@ At `T1`, both peers send an identifier and initial negotiation message at the sa
 
 At `T2`, the peers have successfully negotiated to use `handshake` mode. The accepting peer sends a "corrected" first negotiation message, containing a response to the initiator peer's handshake parameters.
 
-At `T3`, the initiator peer evaluates the accepting peer's handshake message, and responds with another handshake message. This continues back and forth until one peer notifies the other that negotiation is complete using the [negotiation field](#_negotiation-field) (at `Tn`).
+At `T3`, the initiator peer evaluates the accepting peer's handshake message, and responds with another handshake message. This continues back and forth until one peer notifies the other that negotiation is complete using the [negotiation field](#_negotiation-completion-field) (at `Tn`).
 
 
 ### Identifier Negotiation
@@ -652,25 +652,25 @@ The [identifier message](#identifier-message-encoding) must match exactly betwee
 
 ### Negotiation Mode Negotiation
 
-When a peer proposes the [negotiation mode](#_mode-field) `passive`, it is signaling that it will accept whatever negotiation mode the other peer proposes, provided that the other peer's proposed mode is in this peer's [allowed negotiation modes](#_allowed_modes-field).
+When a peer proposes the [negotiation mode](#_mode-negotiation-field) `passive`, it is signaling that it will accept whatever negotiation mode the other peer proposes, provided that the other peer's proposed mode is in this peer's [allowed negotiation modes](#_allowed_modes-negotiation-field).
 
 Rules:
 
-* When a peer proposes a negotiation mode other than `passive`, its own [allowed negotiation modes](#_allowed_modes-field) list is ignored.
+* When a peer proposes a negotiation mode other than `passive`, its own [allowed negotiation modes](#_allowed_modes-negotiation-field) list is ignored.
 * Only one peer may propose a non-passive mode. If both propose a non-passive mode, it is a [hard failure](#hard-and-soft-failures).
-* With the exception of `passive`, if the proposed mode doesn't exist in the other peer's [allowed negotiation modes](#_allowed_modes-field), it is a [hard failure](#hard-and-soft-failures).
-* If both peers propose `passive` mode, then negotiation defaults to `simple`, provided simple mode is in both peers' [allowed negotiation modes](#_allowed_modes-field). Otherwise it is a [hard failure](#hard-and-soft-failures).
+* With the exception of `passive`, if the proposed mode doesn't exist in the other peer's [allowed negotiation modes](#_allowed_modes-negotiation-field), it is a [hard failure](#hard-and-soft-failures).
+* If both peers propose `passive` mode, then negotiation defaults to `simple`, provided simple mode is in both peers' [allowed negotiation modes](#_allowed_modes-negotiation-field). Otherwise it is a [hard failure](#hard-and-soft-failures).
 * As a special case, if both peers propose `simple`, then simple mode is automatically and successfully chosen, disregarding all other rules.
 
 
 ### Protocol Negotiation
 
-The ID field and the `MAJOR` portion of the version field in a peer's [protocol](#_protocol-field) proposal must match exactly with the other peer, otherwise it is a [soft failure](#hard-and-soft-failures).
+The ID field and the `MAJOR` portion of the version field in a peer's [protocol](#_protocol-negotiation-field) proposal must match exactly with the other peer, otherwise it is a [soft failure](#hard-and-soft-failures).
 
 
 ### Cap Negotiation
 
-This is used to negotiate the [ID cap](#_id_cap-field) and [length cap](#_length_cap-field).
+This is used to negotiate the [ID cap](#_id_cap-negotiation-field) and [length cap](#_length_cap-negotiation-field).
 
 The `min`, `max`, and `proposed` sub-fields from the two peers ("us" and "them") are used to generate a negotiated value. The algorithm is as follows:
 
@@ -702,7 +702,7 @@ Peers may also use the "wildcard" value (any negative value) in the `proposed` f
 
 ### Max Negotiation
 
-This is used to negotiate [fixed length](#_fixed_length-field) and [padding](#_padding-field).
+This is used to negotiate [fixed length](#_fixed_length-negotiation-field) and [padding](#_padding-negotiation-field).
 
 Recall that these fields have two unsigned integer subfields:
 * `max` defines the maximum fixed length this peer will agree to.
